@@ -1,0 +1,1777 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kanban — Engineering Training &amp; System Design</title>
+<meta name="description" content="A complete walkthrough of the Kanban board application: architecture, the frozen REST contract, the Go backend, the Next.js frontend, drag-and-drop, optimistic updates, theming, testing and the support runbook." />
+<style>
+/* ============================================================================
+   Document chrome. Self-contained: no CDN, no web fonts, no build step.
+   Colours are declared as CSS variables and mirrored for dark mode.
+   ========================================================================== */
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --panel-2: #f0f2f6;
+  --ink: #0d1424;
+  --ink-2: #414c60;
+  --muted: #626d80;
+  --line: #dde2ea;
+  --line-2: #c3cad6;
+  --accent: #4f46e5;
+  --accent-soft: #eceafe;
+  --ok: #067647;
+  --ok-soft: #d1fadf;
+  --warn: #b54708;
+  --warn-soft: #fef0c7;
+  --bad: #d92d20;
+  --bad-soft: #fee4e2;
+  --code-bg: #12151d;
+  --code-ink: #e6ebf5;
+  --shadow: 0 1px 2px rgba(13,20,36,.06), 0 8px 24px rgba(13,20,36,.06);
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0c11;
+  --panel: #12161f;
+  --panel-2: #171c26;
+  --ink: #e7ecf4;
+  --ink-2: #b6bfcf;
+  --muted: #8b95a7;
+  --line: #232a37;
+  --line-2: #39424f;
+  --accent: #818cf8;
+  --accent-soft: #1e2039;
+  --ok: #47cd89;
+  --ok-soft: #0d2f1f;
+  --warn: #fdb022;
+  --warn-soft: #3a2a0b;
+  --bad: #f97066;
+  --bad-soft: #3b1714;
+  --code-bg: #05070b;
+  --code-ink: #dfe6f2;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 1rem; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:hover { text-decoration-thickness: 2px; }
+
+/* --- skip link --- */
+.skip {
+  position: absolute; left: -9999px; top: 0; background: var(--accent); color: #fff;
+  padding: .6rem 1rem; z-index: 100; border-radius: 0 0 8px 0;
+}
+.skip:focus { left: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* --- layout --- */
+.wrap { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 2.5rem; max-width: 1420px; margin: 0 auto; padding: 0 1.5rem 6rem; }
+@media (max-width: 1080px) { .wrap { grid-template-columns: 1fr; gap: 0; } nav.toc { position: static; max-height: none; } }
+
+nav.toc {
+  position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto;
+  padding: 1.5rem 0 2rem; font-size: .86rem;
+}
+nav.toc h2 { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 1.4rem 0 .4rem; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; }
+nav.toc li { margin: 1px 0; }
+nav.toc a { display: block; padding: .2rem .5rem; border-radius: 6px; color: var(--ink-2); text-decoration: none; }
+nav.toc a:hover { background: var(--panel-2); color: var(--ink); }
+nav.toc .part { font-weight: 700; color: var(--ink); margin-top: .7rem; }
+
+main { min-width: 0; padding-top: 1.5rem; }
+
+/* --- typography --- */
+header.hero { padding: 3rem 0 1.5rem; border-bottom: 1px solid var(--line); margin-bottom: 2rem; }
+header.hero .kicker { font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+header.hero h1 { font-size: clamp(1.9rem, 4vw, 2.7rem); line-height: 1.15; margin: .5rem 0 .6rem; letter-spacing: -.02em; }
+header.hero p.lede { font-size: 1.06rem; color: var(--ink-2); max-width: 68ch; margin: 0; }
+
+h2.part { font-size: 1.5rem; margin: 3.5rem 0 1rem; padding-top: 1rem; border-top: 3px solid var(--accent); letter-spacing: -.01em; }
+h2.part .num { color: var(--accent); margin-right: .5rem; }
+h3 { font-size: 1.16rem; margin: 2.2rem 0 .6rem; letter-spacing: -.01em; }
+h4 { font-size: 1rem; margin: 1.5rem 0 .4rem; color: var(--ink); }
+p, li { max-width: 78ch; }
+ul, ol { padding-left: 1.35rem; }
+li { margin: .3rem 0; }
+code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; font-size: .88em; background: var(--panel-2); padding: .12em .35em; border-radius: 5px; }
+pre { background: var(--code-bg); color: var(--code-ink); padding: 1rem 1.1rem; border-radius: 12px; overflow-x: auto; font-size: .84rem; line-height: 1.6; margin: 1rem 0; border: 1px solid var(--line); }
+pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 2.5rem 0; }
+
+/* --- components --- */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 1.1rem 1.25rem; margin: 1.2rem 0; box-shadow: var(--shadow); }
+.card > :first-child { margin-top: 0; }
+.card > :last-child { margin-bottom: 0; }
+.note { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.warn { border-left: 4px solid var(--warn); background: var(--warn-soft); }
+.trap { border-left: 4px solid var(--bad); background: var(--bad-soft); }
+.good { border-left: 4px solid var(--ok); background: var(--ok-soft); }
+.card > p:first-child > strong:first-child { display: block; margin-bottom: .2rem; }
+.trap strong:first-child, .warn strong:first-child, .good strong:first-child, .note strong:first-child { color: var(--ink); }
+
+table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: .9rem; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--line); padding: .5rem .65rem; text-align: left; vertical-align: top; }
+th { background: var(--panel-2); font-weight: 600; }
+td code, th code { white-space: nowrap; }
+tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--panel-2) 45%, transparent); }
+
+.grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin: 1.2rem 0; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: .9rem 1rem; }
+.tile h4 { margin: 0 0 .3rem; font-size: .95rem; }
+.tile p { margin: 0; font-size: .87rem; color: var(--muted); }
+
+kbd { font-family: ui-monospace, monospace; font-size: .78em; background: var(--panel-2); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 5px; padding: .1em .4em; }
+
+figure { margin: 1.6rem 0; }
+figure svg { width: 100%; height: auto; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+figcaption { font-size: .84rem; color: var(--muted); margin-top: .5rem; }
+
+.diagram text { font-family: ui-sans-serif, system-ui, sans-serif; fill: var(--ink); }
+.diagram .sub { fill: var(--muted); font-size: 12px; }
+.diagram .box { fill: var(--panel-2); stroke: var(--line-2); stroke-width: 1.5; }
+.diagram .accentbox { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.diagram .dbbox { fill: var(--ok-soft); stroke: var(--ok); stroke-width: 1.5; }
+.diagram .warnbox { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.5; }
+.diagram .badbox { fill: var(--bad-soft); stroke: var(--bad); stroke-width: 1.5; }
+.diagram .line { stroke: var(--line-2); stroke-width: 1.6; fill: none; }
+.diagram .accentline { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.diagram .dash { stroke-dasharray: 5 4; }
+.diagram .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+
+.steps { counter-reset: step; list-style: none; padding-left: 0; }
+.steps > li { counter-increment: step; position: relative; padding-left: 2.6rem; margin: .8rem 0; }
+.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: .1rem;
+  width: 1.8rem; height: 1.8rem; border-radius: 50%;
+  background: var(--accent); color: #fff; display: grid; place-items: center;
+  font-size: .82rem; font-weight: 700;
+}
+.steps > li > strong { display: block; }
+
+.checklist { list-style: none; padding-left: 0; }
+.checklist li { padding-left: 1.7rem; position: relative; }
+.checklist li::before { content: "☐"; position: absolute; left: 0; color: var(--accent); font-size: 1.05rem; }
+
+.file-tree { font-family: ui-monospace, monospace; font-size: .82rem; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.2rem; overflow-x: auto; line-height: 1.55; white-space: pre; }
+.file-tree .c { color: var(--muted); }
+.file-tree .f { color: var(--ink); font-weight: 600; }
+
+.theme-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 50; display: flex; gap: .4rem; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: .3rem .5rem; box-shadow: var(--shadow); font-size: .8rem; }
+.backtop { position: fixed; bottom: 1.2rem; right: 1.2rem; z-index: 40; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: .5rem .9rem; font-size: .82rem; box-shadow: var(--shadow); text-decoration: none; color: var(--ink-2); }
+
+.anchor { color: inherit; text-decoration: none; }
+.anchor:hover::after { content: " #"; color: var(--muted); font-weight: 400; }
+@media print {
+  nav.toc, .theme-toggle, .backtop, .skip { display: none !important; }
+  .wrap { grid-template-columns: 1fr; max-width: none; }
+  body { background: #fff; }
+  pre, figure, table, .card { break-inside: avoid; }
+  h2.part { break-before: page; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="theme-toggle">
+  <button type="button" id="theme-btn" style="all:unset;cursor:pointer;padding:.2rem .5rem;border-radius:999px">◐ Theme</button>
+</div>
+<a class="backtop" href="#top">↑ Top</a>
+
+<div class="wrap" id="top">
+
+<nav class="toc" aria-label="Table of contents">
+  <h2>Contents</h2>
+  <ol>
+    <li><a class="part" href="#p0">Part 0 · Start here</a></li>
+    <li><a href="#p0-1">How to read this</a></li>
+    <li><a href="#p0-2">The 60-second model</a></li>
+    <li><a class="part" href="#p1">Part 1 · Orientation</a></li>
+    <li><a href="#p1-1">What the product does</a></li>
+    <li><a href="#p1-2">Repository map</a></li>
+    <li><a href="#p1-3">The three processes</a></li>
+    <li><a class="part" href="#p2">Part 2 · Running it</a></li>
+    <li><a href="#p2-1">Prerequisites</a></li>
+    <li><a href="#p2-2">The five-minute setup</a></li>
+    <li><a href="#p2-3">Verifying each layer</a></li>
+    <li><a href="#p2-4">Ports on this machine</a></li>
+    <li><a class="part" href="#p3">Part 3 · The contract</a></li>
+    <li><a href="#p3-1">Error envelope</a></li>
+    <li><a href="#p3-2">Domain rules</a></li>
+    <li><a href="#p3-3">Endpoints</a></li>
+    <li><a href="#p3-4">Move semantics, worked</a></li>
+    <li><a href="#p3-5">Changing the contract</a></li>
+    <li><a class="part" href="#p4">Part 4 · Backend design</a></li>
+    <li><a href="#p4-1">Package map</a></li>
+    <li><a href="#p4-2">Boot sequence</a></li>
+    <li><a href="#p4-3">Request lifecycle</a></li>
+    <li><a href="#p4-4">DTO layer</a></li>
+    <li><a href="#p4-5">The service layer</a></li>
+    <li><a href="#p4-6">sqlc and the store</a></li>
+    <li><a href="#p4-7">Migrations</a></li>
+    <li><a href="#p4-8">Config &amp; logging</a></li>
+    <li><a href="#p4-9">Error mapping</a></li>
+    <li><a class="part" href="#p5">Part 5 · Database</a></li>
+    <li><a href="#p5-1">ER model</a></li>
+    <li><a href="#p5-2">Constraints</a></li>
+    <li><a href="#p5-3">Add a column recipe</a></li>
+    <li><a class="part" href="#p6">Part 6 · Frontend design</a></li>
+    <li><a href="#p6-1">App Router mental model</a></li>
+    <li><a href="#p6-2">Source map</a></li>
+    <li><a href="#p6-3">Render tree</a></li>
+    <li><a href="#p6-4">Providers</a></li>
+    <li><a href="#p6-5">State ownership</a></li>
+    <li><a href="#p6-6">The API client</a></li>
+    <li><a href="#p6-7">board-state.ts</a></li>
+    <li><a href="#p6-8">useBoard</a></li>
+    <li><a class="part" href="#p7">Part 7 · Deep dives</a></li>
+    <li><a href="#p7-1">Drag and drop</a></li>
+    <li><a href="#p7-2">Optimistic updates</a></li>
+    <li><a href="#p7-3">Theming</a></li>
+    <li><a href="#p7-4">Dates</a></li>
+    <li><a href="#p7-5">Accessibility</a></li>
+    <li><a class="part" href="#p8">Part 8 · Testing</a></li>
+    <li><a href="#p8-1">Go unit tests</a></li>
+    <li><a href="#p8-2">Smoke test</a></li>
+    <li><a href="#p8-3">Cross-layer parity</a></li>
+    <li><a class="part" href="#p9">Part 9 · Runbook</a></li>
+    <li><a href="#p9-1">Symptom → cause → fix</a></li>
+    <li><a href="#p9-2">Reading the logs</a></li>
+    <li><a href="#p9-3">Deployment shape</a></li>
+    <li><a class="part" href="#p10">Part 10 · Recipes</a></li>
+    <li><a href="#p10-1">Add a field end-to-end</a></li>
+    <li><a href="#p10-2">Add an endpoint</a></li>
+    <li><a href="#p10-3">Conventions</a></li>
+    <li><a class="part" href="#p11">Part 11 · Cheat sheet</a></li>
+  </ol>
+</nav>
+
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Engineering training · onboarding</div>
+  <h1>The Kanban application</h1>
+  <p class="lede">
+    A complete, end-to-end walkthrough: the product, the architecture, the frozen REST
+    contract, the Go backend, the Next.js frontend, the two hard problems (drag-and-drop
+    ordering and optimistic updates), the tests, and the runbook you will need on your
+    first support shift. Read it top to bottom the first time, then use the Contents as a
+    reference.
+  </p>
+</header>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p0"><span class="num">Part 0</span>Start here</h2>
+
+<h3 id="p0-1">How to read this</h3>
+<p>
+  You do not need to know Go, Next.js, or SQL to start, but you will find Parts 4–6 much
+  easier if you have seen each language once. Every technical term is defined the first time
+  it appears; the vocabulary you are expected to know on day one is deliberately small.
+</p>
+<div class="grid">
+  <div class="tile"><h4>"Client" / "frontend"</h4><p>The Next.js app running in the user's browser. It owns no database connection and no secrets.</p></div>
+  <div class="tile"><h4>"Server" / "API" / "backend"</h4><p>The Go process. The only thing allowed to talk to PostgreSQL. Publicly reachable inside the machine, not to the internet.</p></div>
+  <div class="tile"><h4>"Contract"</h4><p><code>docs/API.md</code> — the frozen list of URLs, request bodies, response shapes and error codes. Both halves are written against it; neither owns it.</p></div>
+  <div class="tile"><h4>"Optimistic"</h4><p>Change the screen immediately, then tell the server. If the server says no, undo. The user never waits for a network round trip.</p></div>
+</div>
+
+<div class="card note">
+  <p><strong>The one sentence that explains this whole app</strong></p>
+  <p>
+    Ordering is the only genuinely tricky part. A card or a column has an integer
+    <code>position</code>, the positions in a list are always a gap-free run
+    <code>0, 1, 2 … n-1</code>, and <em>every</em> move re-numbers both the list the thing
+    left and the list it joined inside a single database transaction. The frontend mirrors
+    that arithmetic locally so the drag feels instant, and throws the local result away if
+    the server disagrees.
+  </p>
+</div>
+
+<h3 id="p0-2">The 60-second model</h3>
+<ol>
+  <li>You open <code>http://localhost:3000</code>. The side nav asks the API for the list of boards.</li>
+  <li>You click a board. The URL becomes <code>/board/&lt;uuid&gt;</code> and the page asks for that board's columns and cards <em>in one request</em>.</li>
+  <li>You drag a card. The card moves on screen instantly, because the browser is running the same re-ordering algorithm the database will run.</li>
+  <li>You let go. One HTTP call goes out. If it fails, the screen snaps back and a toast explains why.</li>
+  <li>Nothing polls. Nothing streams. The screen is a pure function of the last API response plus the edits you have made since.</li>
+</ol>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p1"><span class="num">Part 1</span>Orientation</h2>
+
+<h3 id="p1-1">What the product does</h3>
+<p>
+  A Kanban board is a pipeline: columns are stages, cards are the work moving through them.
+  A user can create any number of boards, give each one its own custom stages, and move
+  cards around freely.
+</p>
+<table>
+  <thead><tr><th>Feature</th><th>What the user sees</th><th>Where it lives</th></tr></thead>
+  <tbody>
+    <tr><td>Boards</td><td>A list in the left sidebar; create, rename, delete</td><td><code>boards</code> table</td></tr>
+    <tr><td>Columns</td><td>Horizontal lanes with a name and a live card count; create, rename, reorder, delete</td><td><code>board_columns</code> table</td></tr>
+    <tr><td>Cards</td><td>Title, description, assignee, priority, due date</td><td><code>cards</code> table</td></tr>
+    <tr><td>Drag and drop</td><td>Cards move within and between columns; columns reorder horizontally</td><td>Frontend only, persisted by two <code>/move</code> endpoints</td></tr>
+    <tr><td>Themes</td><td>Light/dark toggle that survives a reload, no white flash</td><td><code>localStorage</code> + a class on <code>&lt;html&gt;</code></td></tr>
+    <tr><td>Card editor</td><td>Side drawer for every editable field, with a delete confirmation</td><td>Radix Dialog</td></tr>
+  </tbody>
+</table>
+
+<h3 id="p1-2">Repository map</h3>
+<div class="file-tree">kanban/
+├── <span class="f">docs/API.md</span>            <span class="c">← the frozen contract. Read this before touching anything.</span>
+├── <span class="f">Makefile</span>                 <span class="c">← every developer command, in one place</span>
+├── <span class="f">docker-compose.yml</span>       <span class="c">← postgres + api + web, all at once</span>
+├── <span class="f">.env.example</span>             <span class="c">← template for the backend's environment</span>
+├── <span class="f">backend/</span>                 <span class="c">Go 1.27, net/http, pgx/v5, sqlc-generated store</span>
+│   ├── <span class="f">cmd/server/main.go</span>      <span class="c">the only entrypoint</span>
+│   ├── <span class="f">internal/api/</span>          <span class="c">HTTP: router, middleware, DTOs, handlers, business rules</span>
+│   ├── <span class="f">internal/config/</span>       <span class="c">environment variables with defaults</span>
+│   ├── <span class="f">internal/store/</span>        <span class="c">generated SQL + connection pool + demo seed</span>
+│   ├── <span class="f">migrations/</span>            <span class="c">embedded .sql, applied at boot</span>
+│   ├── <span class="f">sql/</span>                    <span class="c">schema.sql + queries.sql ← sqlc source of truth</span>
+│   └── <span class="f">test/smoke.ps1</span>          <span class="c">end-to-end HTTP test against a live server</span>
+└── <span class="f">frontend/</span>                <span class="c">Next.js 16 App Router, React 19, Tailwind v4, dnd-kit</span>
+    ├── <span class="f">src/app/</span>                <span class="c">routes, root layout, design tokens</span>
+    ├── <span class="f">src/components/</span>         <span class="c">UI only — no data fetching below this line</span>
+    ├── <span class="f">src/hooks/use-board.ts</span>  <span class="c">the single owner of board state and every write</span>
+    ├── <span class="f">src/lib/</span>                <span class="c">typed API client, pure state helpers, date utils</span>
+    ├── <span class="f">src/providers/</span>          <span class="c">theme, toast, board list contexts</span>
+    └── <span class="f">test/parity.mts</span>          <span class="c">frontend ordering vs. the live API</span></div>
+
+<h3 id="p1-3">The three processes</h3>
+<figure>
+<svg class="diagram" viewBox="0 0 900 330" role="img" aria-labelledby="arch-t arch-d">
+  <title id="arch-t">System architecture</title>
+  <desc id="arch-d">A browser running the Next.js app talks JSON over HTTP to a Go API server, which speaks SQL to PostgreSQL. The browser is a separate origin, so CORS applies.</desc>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <rect class="accentbox" x="20" y="60" width="250" height="180" rx="14"/>
+  <text x="145" y="88" text-anchor="middle" font-size="16" font-weight="700">Browser</text>
+  <text class="sub" x="145" y="108" text-anchor="middle">origin http://localhost:3000</text>
+  <rect class="box" x="40" y="124" width="210" height="44" rx="8"/>
+  <text class="sub" x="145" y="143" text-anchor="middle">Next.js 16 (App Router)</text>
+  <text class="sub" x="145" y="158" text-anchor="middle">React 19 · Tailwind v4 · dnd-kit</text>
+  <rect class="box" x="40" y="178" width="210" height="44" rx="8"/>
+  <text class="sub" x="145" y="197" text-anchor="middle">useBoard() — state + writes</text>
+  <text class="sub" x="145" y="212" text-anchor="middle">lib/api.ts — typed fetch</text>
+
+  <rect class="box" x="330" y="60" width="250" height="180" rx="14"/>
+  <text x="455" y="88" text-anchor="middle" font-size="16" font-weight="700">Go API server</text>
+  <text class="sub" x="455" y="108" text-anchor="middle">:8080 (dev) — stdlib net/http</text>
+  <rect class="box" x="350" y="124" width="210" height="34" rx="8"/>
+  <text class="sub" x="455" y="146" text-anchor="middle">middleware: log → recover → CORS</text>
+  <rect class="box" x="350" y="166" width="210" height="30" rx="8"/>
+  <text class="sub" x="455" y="186" text-anchor="middle">handlers (HTTP in/out)</text>
+  <rect class="box" x="350" y="202" width="210" height="30" rx="8"/>
+  <text class="sub" x="455" y="222" text-anchor="middle">service (business rules, txns)</text>
+
+  <rect class="dbbox" x="640" y="60" width="240" height="180" rx="14"/>
+  <text x="760" y="88" text-anchor="middle" font-size="16" font-weight="700">PostgreSQL 16</text>
+  <text class="sub" x="760" y="108" text-anchor="middle">:5432 internal / :5433 published</text>
+  <rect class="box" x="660" y="124" width="200" height="30" rx="8"/>
+  <text class="sub" x="760" y="144" text-anchor="middle">sqlc-generated store</text>
+  <rect class="box" x="660" y="162" width="200" height="30" rx="8"/>
+  <text class="sub" x="760" y="182" text-anchor="middle">boards · board_columns · cards</text>
+  <rect class="box" x="660" y="200" width="200" height="30" rx="8"/>
+  <text class="sub" x="760" y="220" text-anchor="middle">pgxpool (max 10 conns)</text>
+
+  <g class="accentline" marker-end="url(#ar)">
+    <path d="M 272 128 L 328 128"/>
+    <path d="M 328 166 L 272 166"/>
+  </g>
+  <text class="sub" x="300" y="120" text-anchor="middle" font-size="11">fetch</text>
+  <text class="sub" x="300" y="182" text-anchor="middle" font-size="11">JSON</text>
+
+  <g class="line" marker-end="url(#ar)">
+    <path d="M 582 128 L 638 128"/>
+    <path d="M 638 166 L 582 166"/>
+  </g>
+  <text class="sub" x="610" y="120" text-anchor="middle" font-size="11">SQL</text>
+  <text class="sub" x="610" y="182" text-anchor="middle" font-size="11">rows</text>
+
+  <rect class="warnbox" x="20" y="262" width="860" height="46" rx="10"/>
+  <text class="sub" x="450" y="282" text-anchor="middle">Because the browser and the API are different origins, every request is subject to CORS.</text>
+  <text class="sub" x="450" y="299" text-anchor="middle">In development every localhost / 127.0.0.1 port is allowed; in production only CORS_ALLOWED_ORIGINS is.</text>
+</svg>
+<figcaption>Figure 1 — The whole system. Three processes, two network hops, no message queue, no websockets.</figcaption>
+</figure>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p2"><span class="num">Part 2</span>Running it locally</h2>
+
+<h3 id="p2-1">Prerequisites</h3>
+<table>
+  <thead><tr><th>Tool</th><th>Version</th><th>Why</th><th>Check with</th></tr></thead>
+  <tbody>
+    <tr><td>Go</td><td>1.27+</td><td>The API</td><td><code>go version</code></td></tr>
+    <tr><td>Node.js</td><td>22+</td><td>The web app</td><td><code>node --version</code></td></tr>
+    <tr><td>npm</td><td>10+</td><td>Dependency install (this repo does <em>not</em> use pnpm)</td><td><code>npm --version</code></td></tr>
+    <tr><td>PostgreSQL</td><td>16</td><td>The database</td><td><code>pg_isready</code></td></tr>
+    <tr><td>Docker</td><td>optional</td><td>One-command database / whole stack</td><td><code>docker --version</code></td></tr>
+    <tr><td>sqlc</td><td>optional</td><td>Only when you change a SQL query</td><td><code>sqlc version</code></td></tr>
+  </tbody>
+</table>
+
+<h3 id="p2-2">The five-minute setup</h3>
+<ol class="steps">
+  <li><strong>Start a database</strong>
+    <pre><code># easiest: let Docker run it
+make db-up            # docker compose up -d postgres
+
+# or point at a Postgres you already have:
+# export DATABASE_URL="postgres://user:pass@localhost:5432/kanban?sslmode=disable"</code></pre>
+  </li>
+  <li><strong>Start the API</strong>
+    <pre><code>cp .env.example .env          # optional; the defaults already work
+make api                    # = cd backend &amp;&amp; go run ./cmd/server</code></pre>
+    <p>It applies pending migrations and, only if the database has <em>no boards at all</em>, inserts a demo board called “Product Roadmap” plus an empty “Sales Pipeline”.</p>
+  </li>
+  <li><strong>Start the web app</strong>
+    <pre><code>cd frontend
+npm install
+npm run dev                # http://localhost:3000</code></pre>
+  </li>
+  <li><strong>Open the app</strong> and click a board in the sidebar. Drag a card between columns.</li>
+  <li><strong>Run the checks</strong>
+    <pre><code>make check               # gofmt, go vet, go test, frontend build, frontend lint
+make smoke                # every endpoint, against the running API
+cd frontend &amp;&amp; npm run parity   # UI ordering vs. server ordering</code></pre>
+  </li>
+</ol>
+
+<h3 id="p2-3">Verifying each layer</h3>
+<p>When something is broken, find out <em>which</em> layer before you start reading code. Work down this list — it takes ten seconds and saves twenty minutes.</p>
+<table>
+  <thead><tr><th>#</th><th>Check</th><th>Good result</th><th>If it fails</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>curl http://localhost:8080/api/v1/health</code></td><td><code>{"status":"ok","db":"ok"}</code></td><td>Postgres is down or <code>DATABASE_URL</code> is wrong; the API prints the reason at boot.</td></tr>
+    <tr><td>2</td><td><code>curl http://localhost:8080/api/v1/boards</code></td><td>A JSON array of boards</td><td>API up, database empty — create one in the UI.</td></tr>
+    <tr><td>3</td><td>Browser devtools → Network tab, reload</td><td><code>GET /boards</code> and <code>GET /boards/&lt;id&gt;</code> return 200</td><td>A red CORS message means the API URL or allowed origins disagree.</td></tr>
+    <tr><td>4</td><td><code>npm run lint &amp;&amp; npm run build</code> in <code>frontend/</code></td><td>Both exit 0</td><td>Fix the reported file before anything else; the build also type-checks.</td></tr>
+  </tbody>
+</table>
+
+<div class="card warn">
+  <p><strong>Ports on this machine</strong></p>
+  <p>
+    8080, 5432 and 3000 are already taken by another project on this host. The kanban API is
+    therefore run on <strong>8081</strong>, Postgres is published on <strong>5433</strong>, and
+    <code>frontend/.env.local</code> points at <code>http://localhost:8081/api/v1</code>.
+    The two settings must move together: <code>BACKEND_PORT</code> on the API side,
+    <code>NEXT_PUBLIC_API_BASE_URL</code> on the web side.
+  </p>
+</div>
+
+<h3 id="p2-4">Ports on this machine — in detail</h3>
+<table>
+  <thead><tr><th>Service</th><th>Default</th><th>This machine</th><th>Knob</th></tr></thead>
+  <tbody>
+    <tr><td>Postgres (container, published)</td><td>5432</td><td>5433</td><td><code>POSTGRES_PORT</code></td></tr>
+    <tr><td>Go API</td><td>8080</td><td>8081</td><td><code>BACKEND_PORT</code></td></tr>
+    <tr><td>Next.js</td><td>3000</td><td>3000 (or whatever is free)</td><td><code>FRONTEND_PORT</code></td></tr>
+  </tbody>
+</table>
+
+<div class="card trap">
+  <p><strong>Build-time, not run-time</strong></p>
+  <p>
+    <code>NEXT_PUBLIC_API_BASE_URL</code> is replaced with a literal string while
+    <code>next build</code> runs. Changing <code>.env.local</code> without rebuilding
+    leaves the old value baked into the JavaScript bundle, and the fix will appear to
+    "not work". Restarting <code>next dev</code> usually picks it up; a production build
+    must be redone.
+  </p>
+</div>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p3"><span class="num">Part 3</span>The frozen contract</h2>
+<p>
+  <code>docs/API.md</code> is the agreement between the two halves of the app. Read it end to
+  end once; it is short. It is <em>frozen</em> in the sense that changing a field name means
+  changing both the Go structs and the TypeScript types in the same commit — the document
+  keeps you honest about what you changed.
+</p>
+
+<h3 id="p3-1">Error envelope</h3>
+<p>Every response that is not 2xx has exactly this body. There are no other error shapes.</p>
+<pre><code>{
+  "error": "validation_failed",        // stable slug — branch on this in code
+  "message": "title must not be empty" // human text — safe to show in a toast
+}</code></pre>
+<table>
+  <thead><tr><th>Status</th><th><code>error</code> slug</th><th>Meaning</th><th>What the UI does</th></tr></thead>
+  <tbody>
+    <tr><td>400</td><td><code>validation_failed</code></td><td>Bad body, bad UUID, unknown priority</td><td>Toast the <code>message</code>; keep the form open</td></tr>
+    <tr><td>404</td><td><code>not_found</code></td><td>That id does not exist (or was deleted)</td><td>Roll back the optimistic change, then toast</td></tr>
+    <tr><td>409</td><td><code>conflict</code></td><td>Duplicate name where uniqueness is required</td><td>Toast (defined in the contract; nothing enforces it yet)</td></tr>
+    <tr><td>500</td><td><code>internal_error</code></td><td>Unexpected server fault</td><td>Roll back, toast a generic message, check the API log</td></tr>
+  </tbody>
+</table>
+<p>
+  The split between <code>error</code> and <code>message</code> is deliberate: a client can
+  make decisions on the slug without parsing English, and a human can read the message
+  without knowing the slug.
+</p>
+
+<h3 id="p3-2">Domain rules</h3>
+<table>
+  <thead><tr><th>Rule</th><th>Consequence for you</th></tr></thead>
+  <tbody>
+    <tr><td>All ids are UUIDv4 strings</td><td>Never derive an id client-side. The database generates it.</td></tr>
+    <tr><td><code>priority</code> ∈ low | medium | high | urgent, default <code>medium</code></td><td>A <code>CHECK</code> constraint in Postgres and a set in Go both enforce it; the UI offers a fixed list.</td></tr>
+    <tr><td><code>position</code> is a gap-free <code>0..n-1</code> ordinal inside its parent</td><td>Never send a fractional position like 3.5. The server clamps and renumbers; the client mirrors that arithmetic exactly.</td></tr>
+    <tr><td><code>due_date</code> is a calendar date <code>"YYYY-MM-DD"</code>, or <code>null</code></td><td>Never a timestamp. Never parse it with <code>new Date(str)</code> and reformat. See <a href="#p7-4">Part 7.4</a>.</td></tr>
+    <tr><td><code>""</code> and <code>null</code> are equivalent for description/assignee</td><td>The server normalises to <code>""</code>. The client sends a string, never <code>undefined</code>.</td></tr>
+    <tr><td>Names and titles must be non-empty after trimming</td><td>The client trims before sending and validates before sending, so you get an instant error instead of a round trip.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="p3-3">Endpoints</h3>
+<p>Base URL in development: <code>http://localhost:8080/api/v1</code> (this machine: <code>:8081</code>).</p>
+<table>
+  <thead><tr><th>Method</th><th>Path</th><th>Body</th><th>Success</th><th>Returns</th></tr></thead>
+  <tbody>
+    <tr><td>GET</td><td><code>/health</code></td><td>–</td><td>200</td><td><code>{ status, db }</code></td></tr>
+    <tr><td>GET</td><td><code>/boards</code></td><td>–</td><td>200</td><td><code>Board[]</code></td></tr>
+    <tr><td>POST</td><td><code>/boards</code></td><td><code>{ name }</code></td><td>201</td><td><code>Board</code> (with 4 default columns created)</td></tr>
+    <tr><td>GET</td><td><code>/boards/{id}</code></td><td>–</td><td>200</td><td><code>BoardDetail</code> — board + columns + cards, one request</td></tr>
+    <tr><td>PATCH</td><td><code>/boards/{id}</code></td><td><code>{ name }</code></td><td>200</td><td><code>Board</code></td></tr>
+    <tr><td>DELETE</td><td><code>/boards/{id}</code></td><td>–</td><td>204</td><td>empty (cascades to columns and cards)</td></tr>
+    <tr><td>POST</td><td><code>/boards/{boardId}/columns</code></td><td><code>{ name }</code></td><td>201</td><td><code>Column</code> appended at the end</td></tr>
+    <tr><td>PATCH</td><td><code>/columns/{id}</code></td><td><code>{ name }</code></td><td>200</td><td><code>Column</code></td></tr>
+    <tr><td>POST</td><td><code>/columns/{id}/move</code></td><td><code>{ position }</code></td><td>200</td><td><code>Column[]</code> — <strong>the whole board's columns, reindexed</strong></td></tr>
+    <tr><td>DELETE</td><td><code>/columns/{id}</code></td><td>–</td><td>204</td><td>empty (cascades to cards inside)</td></tr>
+    <tr><td>POST</td><td><code>/columns/{id}/cards</code></td><td><code>CreateCardRequest</code></td><td>201</td><td><code>Card</code> appended at the end</td></tr>
+    <tr><td>PATCH</td><td><code>/cards/{id}</code></td><td><code>CreateCardRequest</code> (<strong>full replace</strong>)</td><td>200</td><td><code>Card</code></td></tr>
+    <tr><td>POST</td><td><code>/cards/{id}/move</code></td><td><code>{ column_id, position }</code></td><td>200</td><td><code>Card</code> with its settled column and position</td></tr>
+    <tr><td>DELETE</td><td><code>/cards/{id}</code></td><td>–</td><td>204</td><td>empty</td></tr>
+  </tbody>
+</table>
+<p>
+  Two return values are worth pausing on. <code>POST /columns/{id}/move</code> returns the
+  <em>entire</em> column list rather than one column, and <code>POST /cards/{id}/move</code>
+  returns the moved card with its <em>settled</em> position. Both exist so the client can
+  replace local state with something authoritative rather than guessing what the server
+  decided.
+</p>
+
+<h3 id="p3-4">Move semantics, worked</h3>
+<p>
+  This is the single most important thing to internalise. Read the algorithm, then read the
+  worked example.
+</p>
+<pre><code>POST /cards/{id}/move  { "column_id": "…", "position": 2 }
+
+1. position is the index within the destination column AFTER the move.
+2. Values outside 0..len are clamped, not rejected.
+3. column_id == the card's current column means "reorder in place".
+4. Source and destination are reindexed together in ONE transaction, and the
+   card is returned with the position the server actually gave it.</code></pre>
+
+<div class="card">
+  <p><strong>Worked example — dragging a card across columns</strong></p>
+  <p>Starting state (positions shown in brackets):</p>
+  <pre><code>To Do                 Review
+[0] "one"               [0] "alpha"
+[1] "two"
+[2] "three"</code></pre>
+  <p>
+    The user drags <strong>"one"</strong> and drops it on the second slot of
+    <strong>Review</strong>. The browser sends
+    <code>{ column_id: reviewId, position: 1 }</code> — <em>not</em> 2, because after the
+    move "one" is Review's second card.
+  </p>
+  <p>The server does this inside one transaction:</p>
+  <pre><code>source ids = [one, two, three]
+dest   ids = [alpha]
+
+nextSource = removeID(source, one)            = [two, three]
+nextDest   = insertAt(dest, clamp(1, 1), one) = [alpha, one]
+
+write positions:  two→0, three→1  (source reindexed)
+                 alpha→0, one→1   (dest reindexed, and one's column_id is set first)
+
+commit  →  returns { …"one", "column_id": review, "position": 1 }</code></pre>
+  <p>Final state:</p>
+  <pre><code>To Do                 Review
+[0] "two"               [0] "alpha"
+[1] "three"             [1] "one"</code></pre>
+  <p>
+    Notice the source column was renumbered too. That is what makes ordering
+    <em>un-corruptible</em>: there is no way for two cards to end up claiming the same slot,
+    and no fractional positions to accumulate.
+  </p>
+</div>
+
+<div class="card note">
+  <p><strong>Why the server returns the whole column list for a column move</strong></p>
+  <p>
+    Renumbering five columns means five UPDATEs. Rather than asking the client to guess the
+    resulting order from one number, the server does the arithmetic and hands back the
+    finished list. The frontend therefore <em>replaces</em> its column array with the
+    response instead of patching one entry.
+  </p>
+</div>
+
+<h3 id="p3-5">Changing the contract</h3>
+<ol class="steps">
+  <li><strong>Edit <code>docs/API.md</code> first.</strong> If the document and the code disagree, the code is wrong.</li>
+  <li><strong>Backend DTOs</strong> — <code>backend/internal/api/dto.go</code>. The JSON tags are the contract; the field names are Go-idiomatic behind them.</li>
+  <li><strong>Backend service</strong> — <code>service.go</code> if validation or defaults changed.</li>
+  <li><strong>Frontend types</strong> — <code>frontend/src/lib/types.ts</code>.</li>
+  <li><strong>Frontend normaliser</strong> — <code>frontend/src/lib/api.ts</code>, <code>normaliseCard</code>, if the new field can be null.</li>
+  <li><strong>Run both checks</strong> — <code>make test</code> and <code>cd frontend &amp;&amp; npm run build &amp;&amp; npm run lint</code>.</li>
+  <li><strong>Run the parity test</strong> — it exercises real request/response shapes and will catch a field you forgot.</li>
+</ol>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p4"><span class="num">Part 4</span>Backend design</h2>
+
+<h3 id="p4-1">Package map</h3>
+<p>
+  The Go side is four small packages plus one entrypoint. There are exactly <strong>two</strong>
+  direct dependencies (<code>pgx/v5</code> and <code>google/uuid</code>) — no web framework, no
+  ORM, no router library. Go 1.22+ ships a pattern-matching HTTP router in the standard
+  library, so <code>mux.HandleFunc("GET /api/v1/boards/{boardId}", …)</code> already does
+  method matching, path wildcards and 405s.
+</p>
+<figure>
+<svg class="diagram" viewBox="0 0 860 260" role="img" aria-labelledby="pkg-t pkg-d">
+  <title id="pkg-t">Backend package dependencies</title>
+  <desc id="pkg-d">cmd/server depends on api, config, store and migrations. api depends on store and config. store depends only on pgx. Arrows point from importer to imported, and never back up.</desc>
+  <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+
+  <rect class="accentbox" x="330" y="24" width="200" height="48" rx="10"/>
+  <text x="430" y="46" text-anchor="middle" font-size="14" font-weight="700">cmd/server</text>
+  <text class="sub" x="430" y="63" text-anchor="middle">main.go — the entrypoint</text>
+
+  <rect class="box" x="60" y="128" width="200" height="52" rx="10"/>
+  <text x="160" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/api</text>
+  <text class="sub" x="160" y="167" text-anchor="middle">router · dto · handlers · service</text>
+
+  <rect class="box" x="300" y="128" width="180" height="52" rx="10"/>
+  <text x="390" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/config</text>
+  <text class="sub" x="390" y="167" text-anchor="middle">env vars + defaults</text>
+
+  <rect class="box" x="520" y="128" width="180" height="52" rx="10"/>
+  <text x="610" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/store</text>
+  <text class="sub" x="610" y="167" text-anchor="middle">sqlc · pgxpool · seed</text>
+
+  <rect class="box" x="740" y="128" width="100" height="52" rx="10"/>
+  <text x="790" y="150" text-anchor="middle" font-size="14" font-weight="700">migrations</text>
+  <text class="sub" x="790" y="167" text-anchor="middle">embedded</text>
+
+  <g class="line" marker-end="url(#ar2)">
+    <path d="M 370 72 L 200 124"/>
+    <path d="M 430 72 L 390 124"/>
+    <path d="M 490 72 L 600 124"/>
+    <path d="M 510 76 L 760 124"/>
+  </g>
+  <g class="line" marker-end="url(#ar2)">
+    <path d="M 260 148 L 298 148"/>
+    <path d="M 520 162 L 700 162"/>
+  </g>
+  <text class="sub" x="278" y="142" text-anchor="middle" font-size="11">uses</text>
+  <text class="sub" x="610" y="182" text-anchor="middle" font-size="11">uses</text>
+
+  <rect class="badbox" x="60" y="212" width="740" height="34" rx="8"/>
+  <text class="sub" x="430" y="233" text-anchor="middle">There are no backward arrows. api must never import migrations, and store must never import api.</text>
+</svg>
+<figcaption>Figure 2 — Dependency direction. It is a straight line, which is why the codebase is easy to hold in your head.</figcaption>
+</figure>
+<p>
+  The only asymmetry worth remembering: <code>store</code> duplicates the list of default
+  column names (<code>demoColumns</code>) that also exists in <code>api</code>
+  (<code>DefaultColumnNames</code>). That duplication is deliberate — <code>store</code>
+  cannot import <code>api</code> because <code>api</code> imports <code>store</code>. If you
+  change one, change both.
+</p>
+
+<h3 id="p4-2">Boot sequence</h3>
+<p>Everything happens in <code>main.run()</code>, in this order. Each step is a place startup can fail, and each logs a line you can look for.</p>
+<ol class="steps">
+  <li><strong>Load config</strong> — <code>config.Load()</code> reads the environment and applies defaults, so the server starts with zero setup.</li>
+  <li><strong>Configure logging</strong> — <code>slog</code> with a text handler in development (readable) and JSON everywhere else (machine-parseable).</li>
+  <li><strong>Install a signal handler</strong> — <code>signal.NotifyContext</code> for Ctrl-C / SIGTERM. Everything before the server starts uses that context, so a Ctrl-C during a slow migration unwinds cleanly.</li>
+  <li><strong>Open the pool and ping</strong> — <code>store.Open</code> parses <code>DATABASE_URL</code>, builds a <code>pgxpool</code> (max 10 connections) and <em>pings</em>. Failing early beats accepting traffic you cannot serve.</li>
+  <li><strong>Run migrations</strong> — see <a href="#p4-7">Part 4.7</a>.</li>
+  <li><strong>Seed demo data</strong> — only if <code>SEED_DEMO</code> is true <em>and</em> the board list is empty.</li>
+  <li><strong>Build the service and router</strong> — one <code>Service</code> holding the query object, one <code>http.Handler</code> chain.</li>
+  <li><strong>Serve</strong> — with explicit timeouts: 15s read, 30s write, 60s idle.</li>
+  <li><strong>Shut down gracefully</strong> — on a signal, <code>srv.Shutdown</code> with a 10s grace period so in-flight requests finish.</li>
+</ol>
+
+<div class="card note">
+  <p><strong>Why the timeouts matter</strong></p>
+  <p>
+    Go's zero-value <code>http.Server</code> has no timeouts, which is a well-known way to
+    exhaust file descriptors. Setting them explicitly is a two-line habit that prevents a
+    whole class of production incident. The shutdown grace period is the mirror image: a
+    user who hits Save during your deploy should still get their save.
+  </p>
+</div>
+
+<h3 id="p4-3">Request lifecycle</h3>
+<figure>
+<svg class="diagram" viewBox="0 0 900 300" role="img" aria-labelledby="req-t req-d">
+  <title id="req-t">Request lifecycle through the Go middleware chain</title>
+  <desc id="req-d">A request passes through logging, then panic recovery, then CORS, then the mux router, then a handler, then the service, then sqlc queries, then the response is written and logged.</desc>
+  <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+
+  <rect class="accentbox" x="20" y="40" width="120" height="44" rx="9"/>
+  <text x="80" y="60" text-anchor="middle" font-size="13" font-weight="700">Client</text>
+  <text class="sub" x="80" y="76" text-anchor="middle">fetch()</text>
+
+  <rect class="box" x="170" y="20" width="150" height="40" rx="9"/>
+  <text x="245" y="45" text-anchor="middle" font-size="13" font-weight="700">logMiddleware</text>
+  <rect class="box" x="170" y="70" width="150" height="40" rx="9"/>
+  <text x="245" y="95" text-anchor="middle" font-size="13" font-weight="700">recoverMiddleware</text>
+  <rect class="box" x="170" y="120" width="150" height="40" rx="9"/>
+  <text x="245" y="145" text-anchor="middle" font-size="13" font-weight="700">corsMiddleware</text>
+  <rect class="box" x="170" y="170" width="150" height="40" rx="9"/>
+  <text x="245" y="195" text-anchor="middle" font-size="13" font-weight="700">ServeMux</text>
+
+  <rect class="box" x="350" y="170" width="150" height="40" rx="9"/>
+  <text x="425" y="195" text-anchor="middle" font-size="13" font-weight="700">handleXxx</text>
+  <rect class="box" x="530" y="170" width="150" height="40" rx="9"/>
+  <text x="605" y="195" text-anchor="middle" font-size="13" font-weight="700">Service method</text>
+  <rect class="dbbox" x="710" y="170" width="160" height="40" rx="9"/>
+  <text x="790" y="195" text-anchor="middle" font-size="13" font-weight="700">store.Queries</text>
+
+  <g class="accentline" marker-end="url(#ar3)">
+    <path d="M 142 62 L 166 44"/><path d="M 166 84 L 142 90"/>
+    <path d="M 322 44 L 320 86"/><path d="M 320 90 L 322 134"/>
+    <path d="M 322 134 L 322 186"/><path d="M 322 186 L 346 190"/>
+    <path d="M 502 190 L 526 190"/><path d="M 682 190 L 706 190"/>
+  </g>
+  <text class="sub" x="450" y="30" text-anchor="middle" font-size="11">wraps outward, so execution runs top to bottom — outermost middleware first</text>
+
+  <rect class="warnbox" x="350" y="240" width="520" height="44" rx="9"/>
+  <text class="sub" x="610" y="258" text-anchor="middle">writeJSON / writeError — every response is { … } with Content-Type: application/json; charset=utf-8</text>
+  <text class="sub" x="610" y="275" text-anchor="middle">then recover logs the status and duration, and turns any panic into a 500 envelope</text>
+</svg>
+<figcaption>Figure 3 — Middleware is nested, not a list. <code>recover</code> sits outside CORS so a panic still produces a JSON 500 rather than a dropped connection.</figcaption>
+</figure>
+
+<ul>
+  <li><strong><code>logMiddleware</code></strong> wraps the response writer to capture the status code and byte count, then emits one structured line: method, path, status, bytes, duration. 5xx logs at error level, 4xx at warn, everything else at info.</li>
+  <li><strong><code>recoverMiddleware</code></strong> converts a panic into <code>{"error":"internal_error", …}</code> with 500. Without it one bad request would kill the process and take the board offline.</li>
+  <li><strong><code>corsMiddleware</code></strong> answers <code>OPTIONS</code> preflights with 204 and echoes a permitted <code>Origin</code>. Because the app uses no cookies and no <code>Authorization</code> header, it never needs <code>Allow-Credentials</code>.</li>
+  <li><strong><code>ServeMux</code></strong> matches method + path. A bare <code>GET /api/v1/</code> catch-all answers 404 with the standard envelope instead of the mux's plain-text message.</li>
+</ul>
+
+<h3 id="p4-4">DTO layer</h3>
+<p>
+  <code>internal/api/dto.go</code> defines the wire types. They look almost identical to the
+  store's generated models, and that is on purpose — they are <em>not</em> the same thing.
+</p>
+<table>
+  <thead><tr><th></th><th>DTO (dto.go)</th><th>Store model (generated)</th></tr></thead>
+  <tbody>
+    <tr><td>Exists because</td><td>The contract is frozen and public</td><td>The schema is ours and may change</td></tr>
+    <tr><td><code>id</code></td><td><code>string</code></td><td><code>uuid.UUID</code></td></tr>
+    <tr><td><code>created_at</code></td><td><code>time.Time</code> → RFC3339 string</td><td><code>time.Time</code></td></tr>
+    <tr><td><code>due_date</code></td><td><code>*string</code>, always <code>"YYYY-MM-DD"</code></td><td><code>pgtype.Date</code></td></tr>
+    <tr><td>Changed by</td><td>Only when <code>docs/API.md</code> changes</td><td>Any <code>sqlc generate</code></td></tr>
+  </tbody>
+</table>
+<p>
+  <code>mapping.go</code> converts one to the other. The date conversion lives here and is the
+  only place in the backend that knows the wire format is <code>"2006-01-02"</code>.
+</p>
+
+<h3 id="p4-5">The service layer</h3>
+<p>
+  Handlers are deliberately dumb: read the request, call one service method, write the
+  response. All business rules live in <code>service.go</code>, which is why that file is the
+  only place worth reading to understand the domain.
+</p>
+<h4>The four ordering helpers</h4>
+<pre><code>removeID(ids, id)   → ids without id            (never mutates the input)
+insertAt(ids, idx, id) → ids with id spliced in at idx, clamped to [0, len]
+clampIndex(pos, n)     → pos clamped to [0, n]    (a stale client can't corrupt order)
+withTx(ctx, fn)        → runs fn in a transaction, rolls back on any error</code></pre>
+<p>
+  <code>MoveCard</code> composes them. Read it top to bottom — it is about forty lines and it is
+  the heart of the backend:
+</p>
+<pre><code>tx:
+  card := GetCard(id)                     // 404 if missing
+  GetColumn(columnID)                     // 404 if the destination is missing
+  source := card.ColumnID
+
+  if source == columnID:                   // reorder in place
+      ids   := ListCardIDsInColumn(columnID)
+      next  := insertAt(removeID(ids, id), clampIndex(position, len(ids)-1), id)
+      writePositions(next, …, reassign=false)
+  else:                                   // move across columns
+      sourceIDs := ListCardIDsInColumn(source)
+      destIDs   := ListCardIDsInColumn(columnID)
+      writePositions(removeID(sourceIDs, id), …, source, reassign=false)
+      writePositions(insertAt(destIDs, clampIndex(position, len(destIDs)), id),
+                     …, columnID, reassign=true)   // sets column_id first
+
+  moved := GetCard(id)                    // read back the settled row
+commit</code></pre>
+<p>
+  Two details a reviewer would ask about: <code>reassign=true</code> sets
+  <code>column_id</code> <em>before</em> writing the destination positions, so the positions
+  it is about to write are consistent with the card's new parent. And the card is re-read at
+  the end so the response reports what the database actually stored rather than what we
+  hoped it stored.
+</p>
+
+<h3 id="p4-6">sqlc and the store</h3>
+<p>
+  The project uses <strong>sqlc</strong>: you write plain SQL with comments, and it generates
+  typed Go. There is no ORM, no hand-written row scanning, and no runtime reflection.
+</p>
+<figure>
+<svg class="diagram" viewBox="0 0 900 190" role="img" aria-labelledby="sqlc-t sqlc-d">
+  <title id="sqlc-t">The sqlc code generation loop</title>
+  <desc id="sqlc-d">You edit schema.sql and queries.sql, run sqlc generate, and it produces models.go and queries.sql.go plus db.go. If the SQL and the schema disagree, generation fails.</desc>
+  <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+  <rect class="accentbox" x="20" y="40" width="190" height="50" rx="9"/>
+  <text x="115" y="62" text-anchor="middle" font-size="13" font-weight="700">sql/schema.sql</text>
+  <text class="sub" x="115" y="79" text-anchor="middle">DDL</text>
+  <rect class="accentbox" x="20" y="105" width="190" height="50" rx="9"/>
+  <text x="115" y="127" text-anchor="middle" font-size="13" font-weight="700">sql/queries.sql</text>
+  <text class="sub" x="115" y="144" text-anchor="middle">-- name: X :one …</text>
+  <rect class="box" x="330" y="72" width="150" height="50" rx="9"/>
+  <text x="405" y="93" text-anchor="middle" font-size="13" font-weight="700">sqlc generate</text>
+  <text class="sub" x="405" y="110" text-anchor="middle">make generate</text>
+  <rect class="dbbox" x="600" y="40" width="280" height="115" rx="9"/>
+  <text x="740" y="62" text-anchor="middle" font-size="13" font-weight="700">internal/store/</text>
+  <text class="sub" x="740" y="82" text-anchor="middle">models.go · queries.sql.go · db.go</text>
+  <text class="sub" x="740" y="100" text-anchor="middle">typed params, typed rows, JSON tags</text>
+  <text class="sub" x="740" y="122" text-anchor="middle">generated — do not edit by hand</text>
+  <text class="sub" x="740" y="140" text-anchor="middle">db.go defines the DBTX interface</text>
+  <g class="line" marker-end="url(#ar4)"><path d="M 212 65 L 326 88"/><path d="M 212 130 L 326 107"/><path d="M 482 97 L 596 97"/></g>
+</svg>
+<figcaption>Figure 4 — Code generation. A query that does not match the schema is a <em>generation</em> failure, not a runtime one. That is the whole point of using sqlc.</figcaption>
+</figure>
+<ul>
+  <li><code>queries.sql</code> annotates each statement: <code>-- name: ListBoards :many</code>. <code>:one</code> means "expect at most one row" and gives you <code>pgx.ErrNoRows</code> for free when there is none.</li>
+  <li><code>emit_json_tags: true</code> and <code>emit_pointers_for_null_types: true</code> mean nullable columns become pointers, which is how <code>due_date</code> can distinguish NULL from the empty string.</li>
+  <li>The <code>overrides</code> block maps <code>uuid</code> → <code>google/uuid.UUID</code> and <code>timestamptz</code> → <code>time.Time</code>. Without it you get pgx wrappers that serialise as <code>{"Bytes":"…","Valid":true}</code>, which the contract forbids.</li>
+  <li>There is deliberately <strong>no</strong> <code>date</code> override: sqlc 1.31 does not match one against the pgx/v5 built-in mapping, and keeping <code>pgtype.Date</code> is preferred anyway because its <code>Valid</code> flag is exactly the null-vs-set distinction a nullable calendar date needs.</li>
+  <li><code>db.go</code> defines <code>DBTX</code> — the three methods the store needs. <code>*pgxpool.Pool</code> satisfies it, and so does a transaction, which is what makes <code>WithTx</code> possible without a second set of generated functions.</li>
+</ul>
+
+<h3 id="p4-7">Migrations</h3>
+<p>
+  <code>backend/migrations/</code> holds numbered <code>.sql</code> files that are embedded into
+  the binary with Go's <code>//go:embed</code> and applied at boot. There is no separate
+  migration CLI.
+</p>
+<ol>
+  <li>Create <code>schema_migrations(version text primary key, applied_at timestamptz)</code> if it does not exist.</li>
+  <li>Read the versions already applied.</li>
+  <li>Sort the embedded files lexically — that is why they are named <code>00001_init.sql</code>.</li>
+  <li>Skip anything already recorded. For the rest: begin a transaction, execute the whole file, insert the bookkeeping row, commit.</li>
+</ol>
+<p>
+  Because the DDL and the bookkeeping row share a transaction, a failure leaves the database
+  on the last fully-applied version — never half-migrated. To change the schema you add a
+  <em>new</em> numbered file; you never edit an applied one.
+</p>
+<div class="card warn">
+  <p><strong>Two copies of the same DDL</strong></p>
+  <p>
+    <code>migrations/00001_init.sql</code> and <code>sql/schema.sql</code> contain the same
+    schema. The first is what actually runs; the second is what sqlc reads to type your Go.
+    They must stay identical. If you change one, change the other in the same commit, and
+    re-run <code>make generate</code>.
+  </p>
+</div>
+
+<h3 id="p4-8">Config &amp; logging</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>DATABASE_URL</code></td><td><code>postgres://todo:todo@localhost:5432/kanban?sslmode=disable</code></td><td>The one that really matters.</td></tr>
+    <tr><td><code>BACKEND_PORT</code></td><td><code>8080</code></td><td>Becomes <code>:PORT</code>.</td></tr>
+    <tr><td><code>CORS_ALLOWED_ORIGINS</code></td><td><code>http://localhost:3000</code></td><td>Comma-separated list of exact origins.</td></tr>
+    <tr><td><code>SEED_DEMO</code></td><td><code>true</code></td><td>Seeds only when the board list is empty.</td></tr>
+    <tr><td><code>APP_ENV</code></td><td><code>development</code></td><td>Anything other than <code>production</code> means dev: extra CORS, text logs, debug level.</td></tr>
+  </tbody>
+</table>
+<ul>
+  <li>Empty and whitespace-only environment variables fall back to the default, so a stray <code>PORT=""</code> cannot crash startup.</li>
+  <li><code>RedactDatabaseURL</code> masks the password so the connection string is safe to print. You will see <code>postgres://todo:****@localhost:5432/kanban</code> in the boot log.</li>
+  <li>Logging goes through <code>log/slog</code>: text in development so you can read it, JSON elsewhere so a log aggregator can parse it.</li>
+</ul>
+
+<h3 id="p4-9">Error mapping</h3>
+<p>Handlers return plain <code>error</code> values. Three small types carry meaning, and one function turns them into HTTP:</p>
+<pre><code>ValidationError{…}  → 400  {"error":"validation_failed"}
+NotFoundError{…}    → 404  {"error":"not_found"}
+ConflictError{…}    → 409  {"error":"conflict"}
+pgx.ErrNoRows       → 404  {"error":"not_found"}
+anything else       → 500  {"error":"internal_error"}  + slog.Error with the real cause</code></pre>
+<p>
+  The 500 branch never leaks internals to the client — the details go to the server log. That
+  split is deliberate: the message is safe to put in a toast, and the log has what you need
+  to debug.
+</p>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p5"><span class="num">Part 5</span>Database</h2>
+
+<h3 id="p5-1">ER model</h3>
+<figure>
+<svg class="diagram" viewBox="0 0 900 280" role="img" aria-labelledby="er-t er-d">
+  <title id="er-t">Entity relationship diagram</title>
+  <desc id="er-d">boards has many board_columns; board_columns has many cards. Deleting a board cascades to its columns; deleting a column cascades to its cards.</desc>
+  <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+
+  <rect class="accentbox" x="30" y="80" width="230" height="120" rx="12"/>
+  <text x="145" y="104" text-anchor="middle" font-size="15" font-weight="700">boards</text>
+  <text class="sub mono" x="46" y="128">id          uuid  PK</text>
+  <text class="sub mono" x="46" y="147">name        text</text>
+  <text class="sub mono" x="46" y="166">position    int</text>
+  <text class="sub mono" x="46" y="185">created_at  timestamptz</text>
+
+  <rect class="box" x="330" y="80" width="230" height="120" rx="12"/>
+  <text x="445" y="104" text-anchor="middle" font-size="15" font-weight="700">board_columns</text>
+  <text class="sub mono" x="346" y="128">id          uuid  PK</text>
+  <text class="sub mono" x="346" y="147">board_id    uuid  FK → boards</text>
+  <text class="sub mono" x="346" y="166">name        text</text>
+  <text class="sub mono" x="346" y="185">position    int</text>
+
+  <rect class="dbbox" x="630" y="80" width="240" height="120" rx="12"/>
+  <text x="750" y="104" text-anchor="middle" font-size="15" font-weight="700">cards</text>
+  <text class="sub mono" x="646" y="128">id          uuid  PK</text>
+  <text class="sub mono" x="646" y="147">column_id   uuid  FK → board_columns</text>
+  <text class="sub mono" x="646" y="166">title/desc/assignee  text</text>
+  <text class="sub mono" x="646" y="185">priority text · due_date date</text>
+
+  <g class="line" marker-end="url(#ar5)"><path d="M 262 130 L 326 130"/><path d="M 562 130 L 626 130"/></g>
+  <text class="sub" x="294" y="120" text-anchor="middle" font-size="11">1 : N</text>
+  <text class="sub" x="594" y="120" text-anchor="middle" font-size="11">1 : N</text>
+
+  <rect class="badbox" x="30" y="222" width="840" height="42" rx="9"/>
+  <text class="sub" x="450" y="240" text-anchor="middle">Both foreign keys are ON DELETE CASCADE: deleting a board removes its columns, which remove their cards.</text>
+  <text class="sub" x="450" y="257" text-anchor="middle">That is why the UI treats "Delete board" and "Delete column" as irreversible and asks for confirmation.</text>
+</svg>
+<figcaption>Figure 5 — Three tables, two cascade paths, no join tables.</figcaption>
+</figure>
+
+<h3 id="p5-2">Constraints worth knowing</h3>
+<table>
+  <thead><tr><th>Constraint</th><th>Where</th><th>Why it exists</th></tr></thead>
+  <tbody>
+    <tr><td><code>CHECK (length(btrim(name)) &gt; 0)</code></td><td>boards, board_columns, cards</td><td>Whitespace is not a name. Last line of defence behind the Go validation.</td></tr>
+    <tr><td><code>CHECK (priority IN ('low','medium','high','urgent'))</code></td><td>cards</td><td>The closed set from the contract, enforced in the database as well as in Go.</td></tr>
+    <tr><td><code>NOT NULL DEFAULT ''</code></td><td>description, assignee</td><td>There is no "null assignee" concept; empty string is the only meaning.</td></tr>
+    <tr><td><code>due_date DATE</code> (nullable)</td><td>cards</td><td>A calendar day. Postgres <code>DATE</code> has no time and no zone — exactly the right type.</td></tr>
+    <tr><td><code>idx_board_columns(board_id, position)</code></td><td>board_columns</td><td>Every board load lists columns in order.</td></tr>
+    <tr><td><code>idx_cards(column_id, position)</code></td><td>cards</td><td>Every move lists one column's cards in order.</td></tr>
+  </tbody>
+</table>
+<p>
+  Both indexes are <code>(parent, position)</code> composites — the server's two hottest reads
+  are "children of X in order", and the index turns each into an index scan instead of a
+  sort.
+</p>
+
+<h3 id="p5-3">Add a column recipe</h3>
+<ol class="steps">
+  <li><strong>Write the migration</strong> — <code>backend/migrations/00002_add_labels.sql</code>, e.g. <code>ALTER TABLE cards ADD COLUMN labels TEXT NOT NULL DEFAULT '';</code></li>
+  <li><strong>Mirror it in <code>sql/schema.sql</code></strong> so sqlc sees it.</li>
+  <li><strong>Regenerate</strong> — <code>make generate</code> (first time: <code>make install-sqlc</code>). Commit the generated files; they are part of the source.</li>
+  <li><strong>Add a query</strong> to <code>sql/queries.sql</code> if you need to read or write it.</li>
+  <li><strong>Expose it</strong> — DTO field, service mapping, validation, request body.</li>
+  <li><strong>Update the contract</strong> — <code>docs/API.md</code>, then the TypeScript types and normaliser.</li>
+  <li><strong>Render it</strong> — a component, plus the optimistic update in <code>useBoard.updateCard</code>.</li>
+  <li><strong>Verify</strong> — <code>make check</code> and the parity test.</li>
+</ol>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p6"><span class="num">Part 6</span>Frontend design</h2>
+
+<h3 id="p6-1">App Router mental model</h3>
+<p>
+  Next.js 16 App Router splits code in two. A <strong>Server Component</strong> (no
+  <code>"use client"</code>) runs on the server and is the default. A
+  <strong>Client Component</strong> (<code>"use client"</code> at the top) runs in the browser.
+  Anything below a client component in the tree is also client code, so the boundary
+  matters: keep data fetching on the server, keep interactivity on the client.
+</p>
+<p>
+  In this app almost everything is a client component, because the whole UI is one
+  long-lived interactive canvas. The two server files that remain are the route shells —
+  they exist so the route structure stays visible in the file tree.
+</p>
+<table>
+  <thead><tr><th>Route</th><th>File</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td><code>/</code></td><td><code>app/(app)/page.tsx</code></td><td>Static shell. A client component fetches the board list and redirects to the first one, or shows "Create your first board".</td></tr>
+    <tr><td><code>/board/[boardId]</code></td><td><code>app/(app)/board/[boardId]/page.tsx</code></td><td>Dynamic. Awaits <code>params</code>, then renders the board screen keyed by the id.</td></tr>
+  </tbody>
+</table>
+<div class="card note">
+  <p><strong>Why the board id is in the URL</strong></p>
+  <p>
+    Because the active board is part of the address, reload and the browser Back button both
+    work, a user can share a link to a specific board, and a refresh is a normal
+    server-rendered navigation rather than a client-side guess. The route is marked dynamic
+    (the <code>ƒ</code> in the build output) precisely because of the dynamic segment.
+  </p>
+</div>
+<p>
+  The parenthesised folder <code>(app)</code> is a <em>route group</em>: it adds a layout
+  without adding a URL segment. It exists so the side nav and top bar wrap both routes while
+  the URLs stay <code>/</code> and <code>/board/…</code>.
+</p>
+
+<h3 id="p6-2">Source map</h3>
+<div class="file-tree">frontend/src/
+├── <span class="f">app/</span>
+│   ├── <span class="f">layout.tsx</span>          <span class="c">fonts, pre-paint theme script, ThemeProvider + ToastProvider</span>
+│   ├── <span class="f">globals.css</span>         <span class="c">design tokens, the dark: override, keyframes</span>
+│   └── <span class="f">(app)/</span>              <span class="c">route group: shell + both routes</span>
+│       ├── <span class="f">layout.tsx</span>      <span class="c">BoardsProvider + AppShell</span>
+│       ├── <span class="f">page.tsx</span>        <span class="c">"/"</span>
+│       └── <span class="f">board/[boardId]/</span>
+├── <span class="f">providers/</span>
+│   ├── <span class="f">theme-provider.tsx</span>  <span class="c">light/dark + the inline script that prevents a flash</span>
+│   ├── <span class="f">toast-provider.tsx</span>  <span class="c">the app's own toast queue (no third-party library)</span>
+│   └── <span class="f">boards-provider.tsx</span> <span class="c">the board list, shared by the nav and the home page</span>
+├── <span class="f">hooks/</span>
+│   ├── <span class="f">use-board.ts</span>         <span class="c">ONE hook owns a board: load, mutate, persist, roll back</span>
+│   └── <span class="f">use-is-client.ts</span>     <span class="c">hydration-safe "am I in the browser?" without setState-in-effect</span>
+├── <span class="f">lib/</span>
+│   ├── <span class="f">api.ts</span>               <span class="c">typed fetch, ApiError, response normalisation</span>
+│   ├── <span class="f">board-state.ts</span>       <span class="c">PURE state algebra — no React, no network, fully testable</span>
+│   ├── <span class="f">types.ts</span>             <span class="c">the TypeScript mirror of docs/API.md</span>
+│   ├── <span class="f">dates.ts</span>             <span class="c">calendar-date parsing that cannot shift a day</span>
+│   ├── <span class="f">avatar.ts</span>            <span class="c">stable name → hue hash</span>
+│   ├── <span class="f">constants.ts</span>         <span class="c">API base URL, storage keys, dnd-kit id namespaces</span>
+│   └── <span class="f">utils.ts</span>             <span class="c">cn() class merger, initials</span>
+└── <span class="f">components/</span>
+    ├── <span class="f">layout/</span>              <span class="c">side-nav, top-bar, theme-toggle, new-board-form, board-home</span>
+    ├── <span class="f">board/</span>               <span class="c">board-view (DnD), board-column, board-card, board-header, add-column-tile, skeletons, error</span>
+    ├── <span class="f">card/</span>                <span class="c">card-drawer, priority-badge, assignee-avatar, due-date-chip</span>
+    └── <span class="f">ui/</span>                  <span class="c">button, inputs, dropdown-menu, confirm-dialog, toaster, shared styles</span></div>
+
+<div class="card good">
+  <p><strong>The rule to internalise</strong></p>
+  <p>
+    Components under <code>components/</code> never call <code>fetch</code>. They receive
+    data and callbacks as props. Everything that touches the network or mutates state lives
+    in <code>hooks/use-board.ts</code> and <code>providers/</code>. That is what makes each
+    component small enough to understand in one sitting, and it is why the drag layer could
+    be changed without touching a single card component.
+  </p>
+</div>
+
+<h3 id="p6-3">Render tree</h3>
+<figure>
+<svg class="diagram" viewBox="0 0 900 380" role="img" aria-labelledby="tree-t tree-d">
+  <title id="tree-t">Component tree of the board route</title>
+  <desc id="tree-d">The board screen renders the board view, which contains the board header, a drag and drop context wrapping a sortable column list, each column containing a sortable card list, and the card drawer as a sibling.</desc>
+  <defs><marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+
+  <rect class="accentbox" x="20" y="20" width="200" height="40" rx="8"/>
+  <text class="sub mono" x="30" y="45">RootLayout (server)</text>
+  <rect class="box" x="240" y="20" width="220" height="40" rx="8"/>
+  <text class="sub mono" x="250" y="45">ThemeProvider › ToastProvider</text>
+  <rect class="box" x="480" y="20" width="200" height="40" rx="8"/>
+  <text class="sub mono" x="490" y="45">(app)/layout — BoardsProvider</text>
+  <rect class="box" x="700" y="20" width="180" height="40" rx="8"/>
+  <text class="sub mono" x="710" y="45">AppShell › page</text>
+  <g class="line" marker-end="url(#ar6)"><path d="M 222 40 L 236 40"/><path d="M 462 40 L 476 40"/><path d="M 682 40 L 696 40"/></g>
+
+  <rect class="accentbox" x="700" y="88" width="180" height="40" rx="8"/>
+  <text class="sub mono" x="710" y="113">BoardScreen</text>
+  <rect class="box" x="700" y="156" width="180" height="40" rx="8"/>
+  <text class="sub mono" x="710" y="181">useBoard(boardId)</text>
+  <g class="line" marker-end="url(#ar6)"><path d="M 790 130 L 790 152"/></g>
+
+  <rect class="accentbox" x="640" y="224" width="240" height="40" rx="8"/>
+  <text class="sub mono" x="650" y="249">BoardView (the drag layer)</text>
+  <g class="line" marker-end="url(#ar6)"><path d="M 790 198 L 790 220"/><path d="M 700 244 L 500 244"/></g>
+
+  <rect class="box" x="440" y="140" width="170" height="36" rx="8"/>
+  <text class="sub mono" x="450" y="163">BoardHeader</text>
+  <rect class="box" x="440" y="200" width="170" height="36" rx="8"/>
+  <text class="sub mono" x="450" y="223">DndContext</text>
+  <rect class="box" x="440" y="260" width="170" height="36" rx="8"/>
+  <text class="sub mono" x="450" y="283">BoardColumn × n</text>
+  <rect class="box" x="440" y="320" width="170" height="36" rx="8"/>
+  <text class="sub mono" x="450" y="343">AddColumnTile</text>
+  <rect class="box" x="640" y="290" width="240" height="36" rx="8"/>
+  <text class="sub mono" x="650" y="313">CardDrawer (on click)</text>
+  <g class="line" marker-end="url(#ar6)">
+    <path d="M 700 254 L 700 170 L 614 170"/>
+    <path d="M 700 254 L 700 220 L 614 220"/>
+    <path d="M 700 254 L 700 278 L 614 278"/>
+    <path d="M 700 300 L 700 330 L 614 330"/>
+    <path d="M 700 300 L 700 310 L 636 310"/>
+  </g>
+
+  <rect class="box" x="180" y="260" width="200" height="36" rx="8"/>
+  <text class="sub mono" x="190" y="283">BoardCard × m (sortable)</text>
+  <rect class="box" x="180" y="200" width="200" height="36" rx="8"/>
+  <text class="sub mono" x="190" y="223">SortableContext (columns)</text>
+  <g class="line" marker-end="url(#ar6)"><path d="M 436 278 L 384 278"/><path d="M 384 218 L 384 278"/><path d="M 384 218 L 376 218"/></g>
+  <text class="sub" x="80" y="270" text-anchor="end" font-size="11">each card = useSortable()</text>
+  <text class="sub" x="80" y="208" text-anchor="end" font-size="11">horizontal strategy</text>
+  <text class="sub" x="80" y="316" text-anchor="end" font-size="11">vertical strategy per column</text>
+</svg>
+<figcaption>Figure 6 — Providers wrap everything; <code>useBoard</code> feeds <code>BoardView</code>; <code>BoardView</code> owns the drag context and renders columns; columns render cards.</figcaption>
+</figure>
+
+<h3 id="p6-4">Providers</h3>
+<table>
+  <thead><tr><th>Provider</th><th>Holds</th><th>Why it is not local state</th></tr></thead>
+  <tbody>
+    <tr><td><code>ThemeProvider</code></td><td><code>"light" | "dark"</code> + a toggle</td><td>Needed by the header button, the date formatting, and the pre-paint script, which are all in different subtrees.</td></tr>
+    <tr><td><code>ToastProvider</code></td><td>A queue of notifications</td><td>Any layer can report a failure — a hook, a provider, a dialog — so the queue has to live above all of them.</td></tr>
+    <tr><td><code>BoardsProvider</code></td><td>The board list</td><td>The side nav and the home page both need it; fetching twice would race.</td></tr>
+  </tbody>
+</table>
+<p>
+  Toasts are hand-built (~120 lines) rather than pulled from a library. The provider holds an
+  array, schedules a <code>setTimeout</code> per item, and caps the stack at four. Errors stay
+  on screen for seven seconds; successes for three.
+</p>
+
+<h3 id="p6-5">State ownership</h3>
+<p>There are exactly three kinds of state, and putting something in the wrong one is the most common way to introduce a bug.</p>
+<table>
+  <thead><tr><th>Kind</th><th>Where it lives</th><th>Examples</th><th>Test</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Server state</strong></td><td><code>useBoard</code> / <code>BoardsProvider</code></td><td>Board, columns, cards</td><td>Reload the page; it must come back identical.</td></tr>
+    <tr><td><strong>URL state</strong></td><td>The address bar</td><td>Active board id</td><td>Reload and press Back.</td></tr>
+    <tr><td><strong>UI state</strong></td><td><code>useState</code> in the component that owns the interaction</td><td>Is the drawer open? Am I renaming? Which column is pending delete?</td><td>Close and reopen; it must reset.</td></tr>
+  </tbody>
+</table>
+<p>
+  The rule of thumb: if the user would expect it to survive a refresh, it is server or URL
+  state. If it should vanish on refresh, it is UI state. Nothing here persists UI state to
+  <code>localStorage</code> — the theme is the single exception, and that is a deliberate
+  product decision.
+</p>
+
+<h3 id="p6-6">The API client</h3>
+<p><code>lib/api.ts</code> is the only file that calls <code>fetch</code>. One exported function per endpoint, all returning typed values.</p>
+<pre><code>export class ApiError extends Error {
+  readonly status: number;   // 0 = never reached the server
+  readonly code: string;     // the "error" slug from the envelope
+  readonly path: string;
+}</code></pre>
+<p>Three behaviours matter here, and all three are contract requirements:</p>
+<ol>
+  <li><strong>Every non-2xx becomes an <code>ApiError</code>.</strong> The body is parsed into <code>{ error, message }</code>; if the body is not that shape, a per-status fallback message is used. Nothing is ever silently swallowed.</li>
+  <li><strong>Network failure is status 0.</strong> <code>fetch</code> rejecting means "could not reach the server", which is a different problem from "the server said no" and gets a different message.</li>
+  <li><strong>Responses are normalised.</strong> A <code>null</code> slice becomes <code>[]</code> so <code>.map</code> can never throw, and a card's <code>description</code>/<code>assignee</code> become <code>""</code> rather than <code>null</code>.</li>
+</ol>
+<pre><code>// normaliseBoardDetail — the "null slice" trap the contract warns about
+return {
+  board: raw.board,
+  columns: raw.columns ?? [],          // never null in our components
+  cards:   (raw.cards ?? []).map(normaliseCard),
+};</code></pre>
+
+<h3 id="p6-7">board-state.ts</h3>
+<p>
+  This is the most important frontend file and it contains no React and no network code. It
+  is a set of pure functions over one plain object:
+</p>
+<pre><code>interface BoardState {
+  board: Board;
+  columns: Column[];                    // ordered by position
+  cardsByColumn: Record&lt;string, Card[]&gt;;  // the grouping the contract
+}                                            // leaves to the client</code></pre>
+<table>
+  <thead><tr><th>Function</th><th>Does</th></tr></thead>
+  <tbody>
+    <tr><td><code>createBoardState(board, columns, cards)</code></td><td>Sorts, then groups the flat card list by <code>column_id</code>.</td></tr>
+    <tr><td><code>moveCardInState(state, id, toColumnId, toIndex)</code></td><td>The mirror of the server's algorithm. Clamps, splices, renumbers both lists.</td></tr>
+    <tr><td><code>moveColumnInState(state, id, toIndex)</code></td><td>Same for columns.</td></tr>
+    <tr><td><code>appendCard / replaceCard / removeCard</code></td><td>Card CRUD, always reindexing.</td></tr>
+    <tr><td><code>appendColumn / replaceColumn / removeColumn / replaceColumns</code></td><td>Column CRUD, plus the wholesale replace used after a column move.</td></tr>
+    <tr><td><code>reconcileCard(state, card)</code></td><td>Folds a server response back in: place the card where the server settled it, then let the server's field values win.</td></tr>
+    <tr><td><code>columnIdOf / findCard</code></td><td>Lookups used by the drag layer.</td></tr>
+  </tbody>
+</table>
+<div class="card note">
+  <p><strong>Why purity matters here</strong></p>
+  <p>
+    Because these functions never touch React, the parity test can import them directly and
+    run them against a live server. That is the only reason anyone could prove the client and
+    server agree on ordering. If you find yourself wanting to call <code>setState</code> inside
+    this file, the function belongs in the hook instead.
+  </p>
+</div>
+
+<h3 id="p6-8">useBoard</h3>
+<p>
+  One hook owns a board. It exposes the state, the loading status, and one function per
+  mutation. The interesting part is the <em>write discipline</em>, described next.
+</p>
+<pre><code>const { state, status, error, reload,
+        renameBoard, createColumn, renameColumn, deleteColumn, moveColumn,
+        createCard, updateCard, deleteCard, moveCard,
+        previewCardMove, restoreSnapshot, getState } = useBoard(boardId);</code></pre>
+<ul>
+  <li><strong><code>getState()</code></strong> returns the live state from a ref, so drag handlers resolve their destination against the freshest value even before React has re-rendered.</li>
+  <li><strong><code>previewCardMove</code></strong> and <strong><code>restoreSnapshot</code></strong> are local-only. They let the drag layer move things around on screen and rewind, with no network traffic at all.</li>
+  <li>Every other function returns a boolean (or the created entity) so the caller can keep a form open on failure.</li>
+</ul>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p7"><span class="num">Part 7</span>Deep dives</h2>
+
+<h3 id="p7-1">Drag and drop</h3>
+<p>
+  Drag and drop is built on <code>@dnd-kit</code>. It is a declarative library: you describe
+  what is draggable and what is sortable, and it works out the pointer maths. What you have to
+  get right is the <em>identity</em> of things and the <em>timing</em> of the save.
+</p>
+
+<h4>Step 1 — one context, two id namespaces</h4>
+<p>
+  Cards and columns are both sortable and they share a single <code>DndContext</code>. If
+  their ids could collide, dnd-kit would not be able to tell a card from a column. They
+  therefore live in disjoint namespaces, created in one place:
+</p>
+<pre><code>// lib/constants.ts
+export const cardId       = (id) =&gt; `card::${id}`;
+export const columnId     = (id) =&gt; `column::${id}`;
+export const columnZoneId = (id) =&gt; `columnzone::${id}`;</code></pre>
+<p>
+  Every draggable also carries a <code>data</code> payload, and that is what the drop logic
+  actually reads — ids are for dnd-kit, <code>data</code> is for you:
+</p>
+<pre><code>useSortable({ id: cardId(card.id),
+                data: { type: "card", cardId: card.id, columnId: card.column_id } })</code></pre>
+
+<h4>Step 2 — three kinds of droppable</h4>
+<table>
+  <thead><tr><th>Droppable</th><th>data.type</th><th>Registered by</th><th>Role</th></tr></thead>
+  <tbody>
+    <tr><td>A card</td><td><code>card</code></td><td><code>useSortable</code> in <code>BoardCard</code></td><td>Drop on it → take its slot.</td></tr>
+    <tr><td>A column's card area</td><td><code>columnZone</code></td><td><code>useDroppable</code> in <code>BoardColumn</code></td><td>The forgiving target. Also the <em>only</em> target in an empty column, which is what makes empty columns valid drop targets.</td></tr>
+    <tr><td>A column body</td><td><code>column</code></td><td><code>useSortable</code> in <code>BoardColumn</code></td><td>Dropping on the lane itself appends to the end.</td></tr>
+  </tbody>
+</table>
+
+<h4>Step 3 — sensors</h4>
+<pre><code>useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })</code></pre>
+<p>
+  The pointer sensor's 6-pixel activation distance is what lets a plain click on a card open
+  the editor: no movement, no drag. The keyboard sensor is a genuine freebie — focus the grip,
+  press Space, arrow keys move, Space drops — and it is deliberately not disabled.
+</p>
+
+<h4>Step 4 — the visual model</h4>
+<ul>
+  <li>The dragged card is rendered again inside <code>&lt;DragOverlay&gt;</code>, which follows the cursor.</li>
+  <li>The original card deliberately does <em>not</em> receive the sortable <code>transform</code>. It stays in place as a dimmed, ring-highlighted placeholder.</li>
+  <li>Its siblings <em>do</em> receive transforms, animated with the <code>transition</code> that <code>useSortable</code> returns. That is where the "cards glide into the new slot" feeling comes from — nothing is animated by hand.</li>
+</ul>
+
+<h4>Step 5 — the sequence for a cross-column drag</h4>
+<figure>
+<svg class="diagram" viewBox="0 0 900 400" role="img" aria-labelledby="dnd-t dnd-d">
+  <title id="dnd-t">Sequence of a cross-column card drag</title>
+  <desc id="dnd-d">On pointer down the sensor activates and a snapshot is taken. While dragging, each cross-column hover previews the move locally with no network traffic. On drop, the card is persisted with its new column and index. A failure restores the snapshot and shows a toast.</desc>
+  <defs><marker id="ar7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
+
+  <text class="sub" x="90" y="26" font-size="12" font-weight="700">user</text>
+  <text class="sub" x="330" y="26" font-size="12" font-weight="700">BoardView (dnd-kit)</text>
+  <text class="sub" x="620" y="26" font-size="12" font-weight="700">useBoard state</text>
+  <text class="sub" x="820" y="26" font-size="12" font-weight="700">API</text>
+  <g class="line dash" x1="90" y1="34" x2="90" y2="386"/>
+  <g class="line dash" x1="330" y1="34" x2="330" y2="386"/>
+  <g class="line dash" x1="620" y1="34" x2="620" y2="386"/>
+  <g class="line dash" x1="820" y1="34" x2="820" y2="386"/>
+
+  <g class="line" marker-end="url(#ar7)"><path d="M 92 60 L 326 60"/></g>
+  <text class="sub" x="200" y="54" text-anchor="middle" font-size="11">1. pointerdown on the grip</text>
+  <g class="line" marker-end="url(#ar7)"><path d="M 332 88 L 616 88"/></g>
+  <text class="sub" x="470" y="82" text-anchor="middle" font-size="11">2. onDragStart → snapshotRef = getState()</text>
+
+  <g class="line" marker-end="url(#ar7)"><path d="M 92 116 L 326 116"/></g>
+  <text class="sub" x="200" y="110" text-anchor="middle" font-size="11">3. drag over another column</text>
+  <g class="line" marker-end="url(#ar7)"><path d="M 332 144 L 616 144"/></g>
+  <text class="sub" x="470" y="138" text-anchor="middle" font-size="11">4. onDragOver → previewCardMove (local only)</text>
+  <text class="sub" x="470" y="162" text-anchor="middle" font-size="11">the card is now visibly in the new lane</text>
+  <text class="sub" x="470" y="176" text-anchor="middle" font-size="11">repeats, no network calls</text>
+
+  <g class="line" marker-end="url(#ar7)"><path d="M 92 204 L 326 204"/></g>
+  <text class="sub" x="200" y="198" text-anchor="middle" font-size="11">5. release</text>
+  <g class="line" marker-end="url(#ar7)"><path d="M 332 232 L 616 232"/></g>
+  <text class="sub" x="470" y="226" text-anchor="middle" font-size="11">6. onDragEnd → destination = current slot</text>
+  <g class="line" marker-end="url(#ar7)"><path d="M 332 262 L 816 262"/></g>
+  <text class="sub" x="570" y="256" text-anchor="middle" font-size="11">7. moveCard → POST /cards/{id}/move {column_id, position}</text>
+
+  <rect class="dbbox" x="600" y="284" width="260" height="34" rx="7"/>
+  <text class="sub" x="730" y="305" text-anchor="middle">8a. 200 → reconcile with the settled card</text>
+  <rect class="badbox" x="600" y="326" width="260" height="34" rx="7"/>
+  <text class="sub" x="730" y="347" text-anchor="middle">8b. error → restore snapshot + toast</text>
+  <g class="line" marker-end="url(#ar7)"><path d="M 816 300 L 332 300 L 332 312"/><path d="M 816 343 L 330 343"/></g>
+</svg>
+<figcaption>Figure 7 — A cross-column drag. Steps 4 and 6 are the subtle ones: the preview is local, and the persisted index is the card's <em>current</em> slot, not the slot that was hovered.</figcaption>
+</figure>
+
+<div class="card trap">
+  <p><strong>The bug this shape avoids</strong></p>
+  <p>
+    If, on drop, you sent "the index of the card I hovered", you would be off by one
+    whenever a preview had already run. Example: previews placed the dragged card at index 0
+    and the user released over the card now at index 1; sending 1 would jump it to the end.
+    The fix is a single boolean — <code>previewedRef</code> — that says "the local state
+    already holds the answer".
+  </p>
+  <pre><code>if (previewedRef.current) {
+  toColumnId = currentColumnId;                      // previews already moved it
+  toIndex    = index of the card in that column;     // so trust the state
+} else {
+  toColumnId = over.columnId;                        // no cross-column move yet
+  toIndex    = index of the hovered card;
+}</code></pre>
+</div>
+
+<h4>Column dragging is deliberately different</h4>
+<p>
+  Columns get no <code>onDragOver</code> preview. The sortable transform already shows the
+  column sliding into its new slot, and previewing as well makes it jump. On drop, the
+  destination is simply the index of whichever column is under the pointer — which is
+  exactly what dnd-kit's own <code>arrayMove</code> would produce, so the animation and the
+  result agree.
+</p>
+<p>
+  Cancelling is handled explicitly: dropping on nothing, or pressing Escape, restores the
+  drag-start snapshot. The server was never told about the previews, so restoring is the
+  correct and consistent outcome.
+</p>
+
+<h3 id="p7-2">Optimistic updates</h3>
+<p>
+  Optimistic means: change the screen, then tell the server. The user sees the result
+  instantly; the network happens in the background. The three rules are always the same.
+</p>
+<ol>
+  <li><strong>Apply locally first.</strong> The screen must never wait for a round trip.</li>
+  <li><strong>Snapshot before mutating.</strong> That snapshot is the rollback target.</li>
+  <li><strong>On failure, restore the snapshot and tell the user.</strong> Never fail silently — a card that quietly did not move is worse than an error.</li>
+</ol>
+
+<h4>Guarding against out-of-order responses</h4>
+<p>
+  This is the part people forget. A user can drag a card, then drag it again before the first
+  request returns. If the first response arrives last and is applied, the card jumps back to
+  the old place — a "ghost rewind" the user never asked for.
+</p>
+<p>The fix is a write counter per entity:</p>
+<pre><code>const writeSeq = useRef(new Map&lt;string, number&gt;());
+
+function beginWrite(key) {                       // key = "card:&lt;uuid&gt;"
+  const next = (writeSeq.current.get(key) ?? 0) + 1;
+  writeSeq.current.set(key, next);
+  return next;                                   // the ticket number
+}
+const isLatestWrite = (key, ticket) =&gt; writeSeq.current.get(key) === ticket;</code></pre>
+<pre><code>const ticket = beginWrite(key);
+commit(moveCardInState(before, id, toColumnId, toIndex));   // 1. apply
+try {
+  const saved = await api.moveCard(id, { column_id, position });
+  if (!isLatestWrite(key, ticket)) return;                 // 2. superseded
+  commit(reconcileCard(stateRef.current, saved));
+} catch (cause) {
+  if (!isLatestWrite(key, ticket)) return;                 // 3. do not roll back
+  commit(snapshot);                                        //    over a newer write
+  toast.error("Could not move the card", describeError(cause));
+}</code></pre>
+<p>
+  Read the two <code>if</code> guards carefully. A superseded response must neither apply its
+  result <em>nor</em> restore an old snapshot, because either would clobber the newer,
+  still-in-flight edit. The second guard is the one that is easy to leave out.
+</p>
+
+<h4>Why creates are not optimistic</h4>
+<p>
+  Creating a card or a column needs a server-assigned UUID. A temporary client-generated id
+  would have to be replaced the moment the response arrives, and anything in between — a drag,
+  a delete, a second drag — would be operating on a card that does not exist on the server.
+  Instead the composers show a pending state ("Adding…") and insert the real entity when it
+  arrives. Every <em>update</em>, <em>move</em> and <em>delete</em> is optimistic, because
+  none of them needs a new id.
+</p>
+
+<h3 id="p7-3">Theming</h3>
+<p>
+  Light and dark are two <em>separate</em> colour ramps, not one ramp inverted, so both
+  themes look intentional. The three surface levels are distinct in both: page background,
+  column lane, card.
+</p>
+
+<h4>The Tailwind v4 trap</h4>
+<p>By default Tailwind v4 compiles every <code>dark:</code> utility into a media query:</p>
+<pre><code>/* what v4 does by default */
+@media (prefers-color-scheme: dark) { .dark\:bg-black { … } }</code></pre>
+<p>
+  That ignores the class we toggle on <code>&lt;html&gt;</code>, so the switch would appear to
+  do nothing and the app would follow the operating system. One line in
+  <code>globals.css</code> redefines the variant as a class strategy:
+</p>
+<pre><code>@custom-variant dark (&:where(.dark, .dark *));</code></pre>
+<p>
+  <strong>If you ever delete this line, the toggle silently breaks.</strong> It is the first
+  thing to check when someone reports "dark mode stopped working".
+</p>
+
+<h4>The no-flash script</h4>
+<p>
+  Even with a class strategy, React hydrates <em>after</em> the first paint. Without help, a
+  dark-mode user gets a white flash on every load. The fix is a tiny blocking script in
+  <code>&lt;head&gt;</code> that runs before anything is painted:
+</p>
+<pre><code>(function () {
+  try {
+    var k = "kanban.theme";
+    var s = null;
+    try { s = window.localStorage.getItem(k); } catch (e) {}
+    var t = (s === "light" || s === "dark")
+      ? s                                                   // the user's choice wins
+      : (window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark" : "light");                              // otherwise the OS
+    var r = document.documentElement;
+    r.classList.toggle("dark", t === "dark");
+    r.style.colorScheme = t;
+  } catch (e) {}
+})();</code></pre>
+<p>
+  The same resolution is repeated in <code>resolveInitialTheme()</code> inside the provider,
+  because once React takes over it has to know what the script decided. Keep the two in step.
+  <code>colorScheme</code> is set alongside the class so native widgets — the date picker's
+  calendar icon, scrollbars — follow the theme too.
+</p>
+
+<h4>Token model</h4>
+<pre><code>:root  { --background, --surface, --surface-muted, --surface-strong,
+        --border, --border-strong, --muted-foreground,
+        --accent, --accent-soft, --danger, --warning, --success, --ring }
+.dark  { /* the same names, dark values */ }
+
+@theme inline {                       /* exposes each as a Tailwind colour */
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  …
+}</code></pre>
+<p>
+  That is what makes <code>bg-surface</code>, <code>text-muted-foreground</code> and
+  <code>border-border</code> work. To retheme the product, edit the two blocks — never a
+  component.
+</p>
+
+<h3 id="p7-4">Dates</h3>
+<div class="card trap">
+  <p><strong>The single most common bug in date handling</strong></p>
+  <p>
+    In JavaScript, <code>new Date("2026-10-15")</code> is <strong>UTC midnight</strong>, not
+    local midnight. In New York (UTC−4) that is 8pm on the 14th, so any naive
+    <code>toLocaleDateString()</code> displays the <strong>14th</strong>. A due date the user
+    typed as the 15th silently becomes the 14th.
+  </p>
+</div>
+<pre><code>// WRONG — shifts the day for anyone west of UTC
+const d = new Date("2026-10-15");
+d.toLocaleDateString();     // "Oct 14" in New York
+
+// RIGHT — build a local Date from the parts
+const [, m, day] = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+const d = new Date(2026, 9 - 1, 15);   // local midnight
+d.toLocaleDateString();     // "Oct 15" everywhere</code></pre>
+<p>
+  <code>lib/dates.ts</code> does exactly that, and additionally rejects overflow like
+  <code>2026-02-31</code> (which JavaScript would silently roll into March). The value is
+  never sent to <code>toISOString()</code> anywhere, in either direction.
+</p>
+<p>
+  The backend has the mirror-image rule: Postgres hands back a <code>DATE</code> as UTC
+  midnight, so the API formats it with <code>.UTC().Format("2006-01-02")</code> — the stored
+  day comes out unchanged for every timezone. The two halves agree by construction.
+</p>
+<div class="card note">
+  <p><strong>Why due dates also render only after hydration</strong></p>
+  <p>
+    "Overdue" depends on the user's local today. The server may be in Singapore and the
+    browser in Berlin, so the server-rendered HTML and the first client render could
+    legitimately disagree — React would report a hydration mismatch. The chip therefore
+    formats after mount, keeping the same box size to avoid a visible jump.
+  </p>
+</div>
+
+<h3 id="p7-5">Accessibility</h3>
+<ul>
+  <li><strong>No colour-only meaning.</strong> Priority carries an icon and a word as well as a colour; an overdue date says "Overdue" and swaps the calendar icon for a warning triangle.</li>
+  <li><strong>Every icon-only button has a label.</strong> The shared <code>IconButton</code> requires an <code>aria-label</code> as a prop, so you cannot forget one.</li>
+  <li><strong>One focus treatment.</strong> A shared <code>FOCUS_RING</code> class is applied to every control, so focus is always visible and always the same.</li>
+  <li><strong>Dragging works without a mouse.</strong> dnd-kit's keyboard sensor is enabled and the grip is a real focusable control with its own label.</li>
+  <li><strong>No nested interactive elements.</strong> A card body is a plain button; the drag grip is a sibling. Screen readers therefore expose both.</li>
+  <li><strong>Dialogs trap focus, label themselves and restore focus</strong> on close (Radix does this); the drawer is a labelled <code>Dialog.Title</code> / <code>Dialog.Description</code> pair.</li>
+  <li><strong>Toasts announce themselves</strong> — errors with <code>role="alert"</code>, everything else in a polite live region.</li>
+  <li><strong>Nothing is lost by accident.</strong> A dirty card drawer intercepts backdrop clicks and Escape and asks before discarding.</li>
+</ul>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p8"><span class="num">Part 8</span>Testing</h2>
+<p>
+  There are three test layers, and they are not interchangeable. Knowing which one would catch
+  your bug is most of the skill.
+</p>
+
+<h3 id="p8-1">Go unit tests</h3>
+<p>
+  <code>backend/internal/api/service_test.go</code> — pure functions, no database, no HTTP.
+  Run with <code>make test</code> (or <code>cd backend &amp;&amp; go test ./...</code>).
+</p>
+<table>
+  <thead><tr><th>Test</th><th>What it pins down</th></tr></thead>
+  <tbody>
+    <tr><td><code>TestInsertAt</code></td><td>Front, middle, end, clamping past the end, clamping negative, empty list.</td></tr>
+    <tr><td><code>TestInsertAtDoesNotMutateInput</code></td><td>The ordering helpers never mutate their input — otherwise a rollback would corrupt state.</td></tr>
+    <tr><td><code>TestRemoveID</code></td><td>Removal keeps the right elements; removing an absent id is a no-op.</td></tr>
+    <tr><td><code>TestClampIndex</code></td><td>Out-of-range positions from a stale client are clamped, not rejected.</td></tr>
+    <tr><td><code>TestValidateCardFields</code></td><td>Blank titles rejected, unknown priorities rejected, defaults applied, whitespace normalised.</td></tr>
+    <tr><td><code>TestDueDateRoundTrip</code></td><td><code>"2026-10-15"</code> survives the round trip unchanged; a non-ISO date is rejected; <code>null</code> and <code>""</code> both mean "no due date".</td></tr>
+    <tr><td><code>TestMapNotFound</code></td><td><code>pgx.ErrNoRows</code> becomes a 404; every other error passes through untouched.</td></tr>
+  </tbody>
+</table>
+<p>
+  These tests are cheap and fast. If you change an ordering or a validation rule, add a case
+  here first.
+</p>
+
+<h3 id="p8-2">Smoke test</h3>
+<p>
+  <code>backend/test/smoke.ps1</code> exercises <em>every</em> endpoint against a running
+  server. Run it with <code>make smoke</code> (or <code>./backend/test/smoke.ps1</code>). It is
+  safe to re-run: it cleans up the scratch board it created even after an interrupted run, and
+  it asserts that positions stay a gap-free <code>0..n-1</code> after every move.
+</p>
+
+<h3 id="p8-3">Cross-layer parity</h3>
+<div class="card good">
+  <p><strong>The test that matters most for drag and drop</strong></p>
+  <p>
+    <code>frontend/test/parity.mts</code> imports the <em>real</em> <code>board-state.ts</code>
+    helpers — the same functions the drag layer uses — and runs them against a live API. It
+    then compares what the UI would render with what the server actually settled on, for both
+    a cross-column move and a within-column move.
+  </p>
+  <pre><code>cd frontend
+npm run parity                                  # uses :8081 by default
+KANBAN_API=http://localhost:8080/api/v1 npm run parity</code></pre>
+  <p>
+    Run it whenever you touch <code>moveCardInState</code>, the drop-target logic, or anything
+    in the Go service that computes an order. "The card lands one slot off after a
+    cross-column drag" is invisible to tests on either side in isolation — only the two halves
+    running against each other will catch it.
+  </p>
+</div>
+
+<h3 id="p8-4">What is not covered</h3>
+<p>Be honest about the gaps so you know where to be careful:</p>
+<ul>
+  <li><strong>No frontend unit tests.</strong> The React components are not covered; the pure logic in <code>lib/</code> is what the parity test exercises.</li>
+  <li><strong>No browser end-to-end tests.</strong> Nothing verifies the actual drag gesture, only the index it produces.</li>
+  <li><strong>No load or concurrency testing.</strong> The pool is sized for a single user.</li>
+  <li><strong>No auth.</strong> There are no users; <code>assignee</code> is free text. Do not build anything that assumes otherwise without a contract change.</li>
+</ul>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p9"><span class="num">Part 9</span>Support runbook</h2>
+
+<h3 id="p9-1">Symptom → cause → fix</h3>
+<table>
+  <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td>UI loads, sidebar says "The board list could not be loaded"</td><td>API not running, or the wrong port</td><td><code>curl …/api/v1/health</code>. Check <code>NEXT_PUBLIC_API_BASE_URL</code> against <code>BACKEND_PORT</code>, then <strong>rebuild</strong> the frontend.</td></tr>
+    <tr><td>Browser console: "blocked by CORS policy"</td><td>The frontend origin is not allowed</td><td>Dev allows any localhost port automatically. In production add the exact origin to <code>CORS_ALLOWED_ORIGINS</code> (scheme + host + port, no trailing slash).</td></tr>
+    <tr><td>Toast: "Could not reach the API at …"</td><td><code>fetch</code> itself failed — the server is down or the URL is wrong</td><td>Status 0 means never reached. Check the API process and the URL, not CORS.</td></tr>
+    <tr><td>White flash on every load in dark mode</td><td>The pre-paint script was removed or runs after paint</td><td>Confirm the <code>&lt;script&gt;</code> in the root layout's <code>&lt;head&gt;</code> still exists and is not deferred.</td></tr>
+    <tr><td>Theme toggle does nothing</td><td>Missing <code>@custom-variant dark</code></td><td>Re-add it at the top of <code>globals.css</code>, directly under the Tailwind import.</td></tr>
+    <tr><td>Card lands one slot off after a cross-column drag</td><td>Drop index computed from the pre-preview state</td><td>Run <code>npm run parity</code>; check <code>previewedRef</code> in <code>board-view.tsx</code>.</td></tr>
+    <tr><td>Card snaps back after a drag</td><td>The request failed</td><td>Open the API log; the toast carries the server's <code>message</code>.</td></tr>
+    <tr><td>Due date shows the day before</td><td>Someone parsed it as a UTC instant</td><td>Use <code>parseCalendarDate</code> from <code>lib/dates.ts</code>; never <code>toISOString()</code> a due date.</td></tr>
+    <tr><td>Hydration mismatch warning in the console</td><td>Server and client rendered different text</td><td>Usually a date or theme read during render. Both have a "render after mount" pattern — copy it.</td></tr>
+    <tr><td>Everything still goes to the old API after changing the env var</td><td><code>NEXT_PUBLIC_*</code> is inlined at build time</td><td>Rebuild the frontend.</td></tr>
+    <tr><td><code>npm run lint</code> fails with <code>set-state-in-effect</code></td><td>The React Compiler lint rule is on in Next 16</td><td>Move the <code>setState</code> into a promise callback; the effect should only start the request.</td></tr>
+    <tr><td><code>make generate</code> fails</td><td><code>queries.sql</code> and the schema disagree</td><td>That is the tool working. Update <code>schema.sql</code> (and the migration) to match the query.</td></tr>
+    <tr><td>Server will not start, "ping database" error</td><td>Postgres is not up, or <code>DATABASE_URL</code> is wrong</td><td><code>make db-up</code>, then verify the port (5433 in compose) and the credentials.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="p9-2">Reading the logs</h3>
+<pre><code>time=... level=INFO msg="starting kanban api" addr=:8081 env=development database="postgres://kanban:****@localhost:5433/kanban" seed_demo=true
+time=... level=INFO msg="connected to database"
+time=... level=INFO msg="migrations up to date"
+time=... level=INFO msg="demo data ensured"
+time=... level=INFO msg=listening addr=:8081
+time=... level=WARN msg=http method=POST path=/api/v1/cards/.../move status=404 bytes=63 duration_ms=2</code></pre>
+<ul>
+  <li>One line per request, with status, size and duration — that is your first triage tool.</li>
+  <li>A 404 on a <code>/move</code> usually means the card was deleted in another tab or by a cascade.</li>
+  <li>A 500 line always has a second line: <code>msg="unhandled request error"</code> with the real cause. The client only ever sees the generic message.</li>
+  <li>Dev logs are text (readable); production logs are JSON. The password in the connection string is always masked.</li>
+</ul>
+
+<h3 id="p9-3">Deployment shape</h3>
+<table>
+  <thead><tr><th>Piece</th><th>How it ships</th><th>Watch out for</th></tr></thead>
+  <tbody>
+    <tr><td>API</td><td><code>backend/Dockerfile</code> → a single Go binary; migrations are embedded</td><td>It connects to Postgres at boot and exits non-zero if it cannot. The container is not "ready" until the database answers.</td></tr>
+    <tr><td>Web</td><td><code>frontend/Dockerfile</code> → <code>output: "standalone"</code> produces a self-contained server bundle</td><td><code>NEXT_PUBLIC_API_BASE_URL</code> must be set at <strong>build</strong> time, not just at container start.</td></tr>
+    <tr><td>Database</td><td>Postgres 16 with a named volume</td><td><code>make db-reset</code> destroys the volume. It is safe: seeding only runs when there are no boards.</td></tr>
+    <tr><td>Everything</td><td><code>make up</code> = <code>docker compose up --build</code></td><td>Compose waits for the Postgres healthcheck before starting the API.</td></tr>
+  </tbody>
+</table>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p10"><span class="num">Part 10</span>Recipes</h2>
+
+<h3 id="p10-1">Add a field to a card, end to end</h3>
+<p>Say you want a <code>labels</code> text field. Eight files, in this order:</p>
+<ol class="steps">
+  <li><code><strong>backend/migrations/00002_add_labels.sql</strong></code> — <code>ALTER TABLE cards ADD COLUMN labels TEXT NOT NULL DEFAULT '';</code></li>
+  <li><code><strong>backend/sql/schema.sql</strong></code> — the same line, so sqlc sees it.</li>
+  <li><code><strong>make generate</strong></code> — commit the regenerated store files.</li>
+  <li><strong><code>backend/sql/queries.sql</code></strong> — add the column to the create/update/select statements you need.</li>
+  <li><strong><code>backend/internal/api/dto.go</code></strong> — add the field to <code>Card</code> and to <code>CardRequest</code>.</li>
+  <li><strong><code>backend/internal/api/mapping.go</code></strong> — copy it in <code>cardDTO</code> and normalise it in <code>validateCardFields</code>.</li>
+  <li><strong><code>docs/API.md</code></strong> — then <code>frontend/src/lib/types.ts</code> and <code>normaliseCard</code> in <code>lib/api.ts</code>.</li>
+  <li><strong>Frontend</strong> — a control in <code>card-drawer.tsx</code>, a line in <code>CardFace</code>, and the field in the optimistic draft inside <code>useBoard.updateCard</code>.</li>
+</ol>
+<p>Then verify: <code>make check</code>, <code>make smoke</code>, <code>cd frontend &amp;&amp; npm run parity</code>.</p>
+
+<h3 id="p10-2">Add an endpoint</h3>
+<ol class="steps">
+  <li><strong>Document it</strong> in <code>docs/API.md</code> first — path, body, success shape, every error it can return.</li>
+  <li><strong>SQL</strong> — add a named query in <code>queries.sql</code>, regenerate.</li>
+  <li><strong>Service method</strong> in <code>service.go</code>, returning DTOs, raising <code>invalid()</code> / <code>notFound()</code>.</li>
+  <li><strong>Handler</strong> in <code>handlers.go</code>: context, decode, call, <code>writeJSON</code>. Nothing else.</li>
+  <li><strong>Route</strong> in <code>router.go</code> with the method prefix.</li>
+  <li><strong>Unit tests</strong> in <code>service_test.go</code> for every validation branch.</li>
+  <li><strong>Smoke case</strong> in <code>test/smoke.ps1</code>.</li>
+  <li><strong>Client function</strong> in <code>frontend/src/lib/api.ts</code> plus its TypeScript type.</li>
+  <li><strong>Hook method</strong> in <code>use-board.ts</code> with the optimistic/rollback pattern.</li>
+  <li><strong>UI</strong> — a component that calls it, and a toast on failure.</li>
+</ol>
+
+<h3 id="p10-3">Conventions to follow</h3>
+<table>
+  <thead><tr><th>Area</th><th>Convention</th></tr></thead>
+  <tbody>
+    <tr><td>Go comments</td><td>Explain <em>why</em>, not what. A comment restating the line below it is noise; a comment explaining a non-obvious decision is the most valuable code in the file.</td></tr>
+    <tr><td>Error handling</td><td>Never leak internals to the client. Log the cause, return the envelope.</td></tr>
+    <tr><td>Transactions</td><td>Anything that touches two rows in service of one user action goes in <code>withTx</code>.</td></tr>
+    <tr><td>SQL</td><td>Never edit <code>internal/store/queries.sql.go</code> or <code>models.go</code> by hand — they are generated.</td></tr>
+    <tr><td>TypeScript</td><td>Strict mode, no <code>any</code> without a comment justifying it, no unused variables (they fail the build).</td></tr>
+    <tr><td>Components</td><td>Small and presentational. Data and callbacks arrive as props; components never call <code>fetch</code>.</td></tr>
+    <tr><td>Styling</td><td>Tailwind classes composed with <code>cn()</code>. Colours only from the token names in <code>globals.css</code>.</td></tr>
+    <tr><td>Before you push</td><td><code>make check</code> and <code>cd frontend &amp;&amp; npm run parity</code> must be green.</td></tr>
+  </tbody>
+</table>
+
+<!-- ==================================================================== -->
+<h2 class="part" id="p11"><span class="num">Part 11</span>Cheat sheet</h2>
+
+<h4>Commands</h4>
+<pre><code>make help            # list every target
+make db-up           # start Postgres
+make db-reset        # wipe and restart Postgres (safe: seed only runs when empty)
+make api             # run the API
+make web             # run the Next dev server
+make test            # Go unit tests
+make vet / make fmt  # Go static analysis / formatting
+make smoke           # every endpoint against a running API
+make check           # fmt + vet + test + frontend build + frontend lint
+make generate        # regenerate the sqlc store
+make up              # the whole stack in Docker
+
+cd frontend
+npm run dev          # http://localhost:3000
+npm run lint         # eslint (must exit 0)
+npm run build        # next build (also type-checks; must exit 0)
+npm run parity       # client ordering vs. live API</code></pre>
+
+<h4>Key files, in the order you will need them</h4>
+<table>
+  <thead><tr><th>When</th><th>Read</th></tr></thead>
+  <tbody>
+    <tr><td>Day one</td><td><code>docs/API.md</code>, this document</td></tr>
+    <tr><td>First backend change</td><td><code>backend/internal/api/service.go</code>, then <code>router.go</code></td></tr>
+    <tr><td>First frontend change</td><td><code>frontend/src/hooks/use-board.ts</code>, then <code>lib/board-state.ts</code></td></tr>
+    <tr><td>Touching drag and drop</td><td><code>components/board/board-view.tsx</code> and <code>board-column.tsx</code></td></tr>
+    <tr><td>Something looks wrong</td><td>The runbook in Part 9, before any code</td></tr>
+  </tbody>
+</table>
+
+<h4>Five rules to remember</h4>
+<ol>
+  <li>Ordering is a gap-free <code>0..n-1</code> list, renumbered on every move, in one transaction. Never invent a fractional position.</li>
+  <li>A due date is a calendar day, not an instant. Parse the parts; never <code>new Date(str)</code>.</li>
+  <li>Update the screen first, then the server — and always have a snapshot to roll back to.</li>
+  <li>Change <code>docs/API.md</code> before you change code, and change both halves together.</li>
+  <li>Never edit a generated file. Regenerate it.</li>
+</ol>
+
+<hr>
+<p>
+  <em>Kanban — engineering training. The code of record is the repository; this document
+  explains it, and the repository wins when they disagree.</em>
+</p>
+
+</main>
+</div>
+
+<script>
+// Document theme toggle. Standalone file, so it carries its own tiny state —
+// the same discipline the app follows (persist the choice, apply it before
+// paint) rather than a framework.
+(function () {
+  var KEY = "kanban.training.theme";
+  var root = document.documentElement;
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved === "light" || saved === "dark") {
+      root.setAttribute("data-theme", saved);
+    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      root.setAttribute("data-theme", "dark");
+    }
+  } catch (e) { /* storage blocked: keep the default light */ }
+
+  var btn = document.getElementById("theme-btn");
+  if (!btn) return;
+  btn.addEventListener("click", function () {
+    var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch (e) { /* ignore */ }
+  });
+})();
+</script>
+</body>
+</html>

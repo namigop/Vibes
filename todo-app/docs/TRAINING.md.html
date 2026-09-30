@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TODO App — Maintainer Training Guide</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-soft: #1e293b;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --ink-soft: #475569;
+    --line: #e2e8f0;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --green: #059669;
+    --green-soft: #d1fae5;
+    --amber: #b45309;
+    --amber-soft: #fef3c7;
+    --red: #dc2626;
+    --red-soft: #fee2e2;
+    --code-bg: #0f172a;
+    --code-ink: #e2e8f0;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65;
+    color: var(--ink);
+    background: #f1f5f9;
+  }
+
+  .layout { display: flex; align-items: flex-start; }
+
+  /* ---------- Sidebar ---------- */
+  nav.toc {
+    position: sticky;
+    top: 0;
+    width: 290px;
+    flex: 0 0 290px;
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--bg);
+    color: var(--code-ink);
+    padding: 26px 18px 40px;
+  }
+  nav.toc h2 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #64748b;
+    margin: 26px 0 10px;
+  }
+  nav.toc h2:first-of-type { margin-top: 0; }
+  nav.toc a {
+    display: block;
+    color: #cbd5e1;
+    text-decoration: none;
+    font-size: 0.83rem;
+    padding: 5px 10px;
+    border-radius: 6px;
+    margin-bottom: 1px;
+    border-left: 2px solid transparent;
+  }
+  nav.toc a:hover { background: var(--bg-soft); color: #fff; }
+  nav.toc a.sub { padding-left: 22px; font-size: 0.79rem; color: #94a3b8; }
+  nav.toc .brand {
+    font-weight: 700; color: #fff; font-size: 1rem; letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+  nav.toc .brand small { display:block; font-weight: 400; color: #64748b; font-size: 0.72rem; margin-top: 2px; }
+
+  /* ---------- Main ---------- */
+  main {
+    flex: 1;
+    min-width: 0;
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 44px 48px 120px;
+    background: var(--card);
+  }
+
+  header.hero {
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 22px;
+    margin-bottom: 34px;
+  }
+  header.hero .eyebrow {
+    text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.7rem;
+    color: var(--accent); font-weight: 700; margin-bottom: 8px;
+  }
+  header.hero h1 { margin: 0 0 10px; font-size: 2.1rem; letter-spacing: -0.02em; }
+  header.hero p { margin: 0; color: var(--ink-soft); font-size: 1.02rem; max-width: 62ch; }
+
+  section { margin-bottom: 52px; scroll-margin-top: 20px; }
+
+  h2 {
+    font-size: 1.5rem; letter-spacing: -0.015em; margin: 0 0 6px;
+    padding-bottom: 8px; border-bottom: 2px solid var(--line);
+  }
+  h3 { font-size: 1.12rem; margin: 30px 0 10px; letter-spacing: -0.01em; }
+  h4 { font-size: 0.97rem; margin: 20px 0 8px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; }
+  p { margin: 12px 0; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 6px 0; }
+  code {
+    font-family: var(--mono); font-size: 0.86em;
+    background: #f1f5f9; padding: 1.5px 5px; border-radius: 4px;
+    color: #0f172a; word-break: break-word;
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-ink);
+    padding: 15px 17px; border-radius: 9px; overflow-x: auto;
+    font-size: 0.83rem; line-height: 1.6; margin: 14px 0;
+  }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #f8fafc; font-weight: 600; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); }
+  tr:last-child td { border-bottom: none; }
+
+  .callout {
+    border-left: 4px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 13px 17px; border-radius: 0 7px 7px 0; margin: 18px 0;
+  }
+  .callout strong { display: block; margin-bottom: 3px; }
+  .callout.warn { border-color: var(--amber); background: var(--amber-soft); }
+  .callout.danger { border-color: var(--red); background: var(--red-soft); }
+  .callout.ok { border-color: var(--green); background: var(--green-soft); }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  .tag {
+    display: inline-block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em;
+    text-transform: uppercase; padding: 2px 7px; border-radius: 4px; vertical-align: middle;
+  }
+  .tag.new { background: var(--green-soft); color: var(--green); }
+  .tag.edit { background: var(--accent-soft); color: var(--accent); }
+  .tag.rm { background: var(--red-soft); color: var(--red); }
+  .tag.gen { background: var(--amber-soft); color: var(--amber); }
+
+  .diagram {
+    background: #f8fafc; border: 1px solid var(--line); border-radius: 9px;
+    padding: 22px; margin: 18px 0; overflow-x: auto;
+  }
+  .diagram pre { background: none; color: #1e293b; padding: 0; margin: 0; font-size: 0.79rem; }
+
+  .filetree {
+    background: #f8fafc; border: 1px solid var(--line); border-radius: 9px;
+    padding: 16px 18px; margin: 16px 0;
+  }
+  .filetree pre { background: none; color: #1e293b; padding: 0; margin: 0; font-size: 0.8rem; line-height: 1.55; }
+
+  .steps { counter-reset: step; list-style: none; padding: 0; }
+  .steps > li {
+    counter-increment: step; position: relative; padding-left: 42px; margin-bottom: 16px;
+  }
+  .steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: 0;
+    width: 27px; height: 27px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700;
+  }
+  .steps h4 { margin: 3px 0 4px; text-transform: none; letter-spacing: 0; color: var(--ink); font-size: 1rem; }
+
+  .kbd {
+    font-family: var(--mono); font-size: 0.78rem; background: #fff;
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+    padding: 1.5px 6px; white-space: nowrap;
+  }
+
+  hr { border: none; border-top: 1px solid var(--line); margin: 40px 0; }
+
+  @media (max-width: 900px) {
+    .layout { display: block; }
+    nav.toc { width: 100%; flex: none; height: auto; position: static; }
+    main { padding: 28px 20px 80px; }
+  }
+  @media print {
+    nav.toc { display: none; }
+    .layout { display: block; }
+    main { max-width: 100%; padding: 0; }
+    body { background: #fff; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+<nav class="toc">
+  <div class="brand">
+    TODO App
+    <small>Maintainer training guide</small>
+  </div>
+
+  <h2>Orientation</h2>
+  <a href="#start">1. Start here</a>
+  <a href="#what">2. What this app is</a>
+  <a href="#stack">3. Technology choices</a>
+
+  <h2>Architecture</h2>
+  <a href="#diagram">4. System diagram</a>
+  <a href="#request">5. Anatomy of a request</a>
+  <a href="#layers">6. The four backend layers</a>
+  <a href="#frontend-arch">7. Frontend architecture</a>
+
+  <h2>Implementation</h2>
+  <a href="#datalayer">8. Data layer &amp; sqlc</a>
+  <a href="#errors">9. Errors &amp; validation</a>
+  <a href="#cors">10. CORS</a>
+  <a href="#migrations">11. Migrations</a>
+  <a href="#config">12. Configuration</a>
+
+  <h2>Operations</h2>
+  <a href="#running">13. Running the stack</a>
+  <a href="#testing">14. Tests</a>
+  <a href="#troubleshooting">15. Troubleshooting</a>
+  <a href="#lessons">16. Bugs already hit</a>
+
+  <h2>Extending</h2>
+  <a href="#recipes">17. Common change recipes</a>
+  <a href="#roadmap">18. Where to grow it</a>
+  <a href="#checklist">19. Pre-merge checklist</a>
+</nav>
+
+<main>
+
+<header class="hero">
+  <div class="eyebrow">Internal documentation</div>
+  <h1>Maintaining the TODO App</h1>
+  <p>A ground-up tour of this codebase for a junior engineer who is about to own it: how it is put together, why it is put together that way, and exactly where to change things.</p>
+</header>
+
+<!-- ============================================ -->
+<section id="start">
+  <h2>1. Start here</h2>
+
+  <p>Welcome aboard. This document assumes you can read Go and TypeScript but may be new to
+  <code>sqlc</code>, <code>Chi</code>, <code>goose</code>, or containerised development. If any of
+  those are new, this guide explains them where they appear.</p>
+
+  <div class="callout">
+    <strong>The 60-second version</strong>
+    <p>A Next.js page calls a Go REST API. The Go API talks to PostgreSQL through
+    <em>generated</em> code — you write SQL, a tool writes Go. Everything runs in Docker
+    Compose with hot reload. There is no auth and one user.</p>
+  </div>
+
+  <h3>Your first 30 minutes</h3>
+  <ol class="steps">
+    <li>
+      <h4>Get the stack running</h4>
+      <p>Follow <a href="#running">§13 Running the stack</a>. Expect the first build to take a
+      few minutes while Docker pulls base images.</p>
+    </li>
+    <li>
+      <h4>Click around the UI</h4>
+      <p>Open <code>http://localhost:3000</code>. Create a todo, tick it, edit it, delete it.
+      Watch the backend logs while you do — every action logs one structured line.</p>
+    </li>
+    <li>
+      <h4>Make a harmless change</h4>
+      <p>Edit the heading in <code>frontend/app/page.tsx</code> and save. Confirm the browser
+      updates without a manual refresh. This proves hot reload works on your machine before
+      you depend on it.</p>
+    </li>
+    <li>
+      <h4>Run the tests once</h4>
+      <p><code>make test</code>. This boots a throwaway Postgres in Docker. Seeing it pass
+      gives you a safety net before you change anything.</p>
+    </li>
+  </ol>
+</section>
+
+<!-- ============================================ -->
+<section id="what">
+  <h2>2. What this app is</h2>
+
+  <p>A single-user, unauthenticated CRUD app over one entity: a todo. It was scoped
+  deliberately small so the full stack — build, migrations, codegen, tests, hot reload —
+  could be exercised end to end without feature work getting in the way.</p>
+
+  <h3>The data model</h3>
+  <p>One table, six columns, defined in
+  <code>backend/migrations/00001_create_todos.sql</code>:</p>
+
+  <table>
+    <thead><tr><th>Column</th><th>Type</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td><code>UUID</code></td><td>Primary key, defaults to <code>gen_random_uuid()</code> via the <code>pgcrypto</code> extension.</td></tr>
+      <tr><td><code>title</code></td><td><code>TEXT NOT NULL</code></td><td>Required, max 200 chars (enforced in Go, not the DB).</td></tr>
+      <tr><td><code>description</code></td><td><code>TEXT NOT NULL DEFAULT ''</code></td><td>Optional, max 2000 chars. Empty string, never <code>NULL</code>.</td></tr>
+      <tr><td><code>done</code></td><td><code>BOOLEAN NOT NULL DEFAULT FALSE</code></td><td>The completion flag.</td></tr>
+      <tr><td><code>created_at</code></td><td><code>TIMESTAMPTZ NOT NULL</code></td><td>Database clock, not application clock.</td></tr>
+      <tr><td><code>updated_at</code></td><td><code>TIMESTAMPTZ NOT NULL</code></td><td>Bumped on every update via <code>NOW()</code> in the SQL, not Go.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout ok">
+    <strong>Design decision: no nullable columns</strong>
+    <p>Every column is <code>NOT NULL</code>. This is why the API never has to decide what a
+    missing description means. When you add a field, resist the urge to make it nullable —
+    prefer a sensible <code>DEFAULT</code>.</p>
+  </div>
+
+  <h3>Explicitly out of scope</h3>
+  <p>Do not assume any of these exist; they were consciously excluded. Adding one is fine,
+  but it is a design change, not a bug fix:</p>
+  <ul>
+    <li>Authentication, users, sessions</li>
+    <li>Categories, priorities, due dates, subtasks, recurring tasks</li>
+    <li>Pagination beyond "return everything"</li>
+    <li>Real-time updates (no WebSocket/SSE)</li>
+    <li>Production Dockerfile, CI/CD, deployment config</li>
+  </ul>
+</section>
+
+<!-- ============================================ -->
+<section id="stack">
+  <h2>3. Technology choices</h2>
+
+  <p>Each choice below was picked deliberately. The "why" column is the part that matters —
+  it tells you when a choice is still right and when it has become a liability.</p>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Chosen</th><th>Why this and not the obvious alternative</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Router</td><td>Chi</td>
+        <td>Thin wrapper over <code>net/http</code>. You can read Chi's middleware and drop down to
+        stdlib at any time. Gin/Echo hide the stdlib behind a custom context type, which makes
+        the underlying behaviour harder to look up.</td>
+      </tr>
+      <tr>
+        <td>SQL access</td><td>sqlc + pgx/v5</td>
+        <td>You write real SQL; a generator emits typed Go. Compared with an ORM you keep full
+        control of the query and see exactly what runs. Compared with hand-written pgx code you
+        avoid the scanning boilerplate.</td>
+      </tr>
+      <tr>
+        <td>Migrations</td><td>goose</td>
+        <td>Plain <code>.sql</code> files with <code>-- +goose Up/Down</code> blocks. The library is
+        embedded and run at startup, so there is no separate migration service to keep alive.</td>
+      </tr>
+      <tr>
+        <td>Validation</td><td>go-playground/validator</td>
+        <td>Struct-tag rules (<code>validate:"required,max=200"</code>) keep the rule next to the field
+        it describes. The frontend validates too, but only for fast feedback — the backend is the
+        authority.</td>
+      </tr>
+      <tr>
+        <td>Logging</td><td><code>log/slog</code> (stdlib)</td>
+        <td>Structured JSON logs with zero dependencies. <code>slog</code> is now stdlib, so there
+        is no reason to pull in zap or zerolog.</td>
+      </tr>
+      <tr>
+        <td>Hot reload</td><td>air</td>
+        <td>The de facto Go hot-reload tool. Pinned in the Dockerfile for a reason — see §15.</td>
+      </tr>
+      <tr>
+        <td>Frontend</td><td>Next.js 14 App Router</td>
+        <td>Chosen over Vite+SPA because it gives room to grow into server rendering. The trade-off:
+        more machinery than a todo app strictly needs.</td>
+      </tr>
+      <tr>
+        <td>Server state</td><td>TanStack Query</td>
+        <td>Handles caching, refetching and invalidation so components never hand-roll
+        <code>useEffect</code> + <code>useState</code> + <code>fetch</code> again.</td>
+      </tr>
+      <tr>
+        <td>Styling</td><td>Tailwind CSS</td>
+        <li>Utility classes; no separate stylesheet to keep in sync, and dark mode is
+        <code>dark:</code> variants on the same element.</li>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn">
+    <strong>Config: environment variables, no config library</strong>
+    <p><code>backend/internal/config/config.go</code> reads <code>os.Getenv</code> with defaults
+    matching <code>.env.example</code>. Adding a dependency here (Viper, koanf) is not worth it at
+    this size.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="diagram">
+  <h2>4. System diagram</h2>
+
+  <p>Three containers in one Compose network. The browser talks to <em>both</em> — the frontend
+  runs in the user's browser, and its JavaScript calls the backend directly.</p>
+
+  <div class="diagram">
+<pre>
+   ┌────────────────────────────────────────────────────────────────────┐
+   │  Browser (host)                                                    │
+   │  Next.js dev server on :3000 serves HTML + JS                     │
+   │      ↓ page loads                                                │
+   │  React components run client-side                                │
+   │      ↓ fetch (with Origin: http://localhost:3000)                 │
+   └──────┼──────────────────────────────┬─────────────────────────────┘
+          │ served HTML/JS               │ JSON over HTTP  (cross-origin)
+          ▼                              ▼
+ ┌────────────────────┐        ┌──────────────────────────────────┐
+ │  frontend          │        │  backend  (Go, :8080)            │
+ │  node:20-alpine    │        │  air → go build → ./tmp/server  │
+ │  Next.js dev       │        │  chi router + middleware         │
+ └────────────────────┘        └───────────────┬──────────────────┘
+                                               │ pgx/v5 pool (max 10 conns)
+                                               ▼
+                                    ┌──────────────────────────┐
+                                    │  postgres:16-alpine       │
+                                    │  goose migrations on boot │
+                                    │  volume: pgdata          │
+                                    └──────────────────────────┘
+</pre>
+  </div>
+
+  <h3>Container responsibilities</h3>
+  <table>
+    <thead><tr><th>Service</th><th>Image</th><th>Port</th><th>Restart triggers on</th></tr></thead>
+    <tbody>
+      <tr><td><code>postgres</code></td><td><code>postgres:16-alpine</code></td><td>5432</td><td>never (it holds state)</td></tr>
+      <tr><td><code>backend</code></td><td><code>golang:1.26-alpine</code></td><td>8080</td><td>any change under <code>backend/</code></td></tr>
+      <tr><td><code>frontend</code></td><td><code>node:20-alpine</code></td><td>3000</td><td>any change under <code>frontend/</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong>Why the backend does not serve the frontend</strong>
+    <p>In production you would probably build the Next.js app and have Go serve the static output,
+    giving one port and no CORS. We kept them separate so you can hot-reload both sides
+    independently. This is why CORS exists at all — see §10.</p>
+  </div>
+
+  <h3>Repository layout</h3>
+  <div class="filetree">
+<pre>todo-app/
+├── backend/
+│   ├── cmd/server/main.go        entrypoint: wire deps, run migrations, serve
+│   ├── internal/
+│   │   ├── config/               env loading + validation
+│   │   ├── httpapi/              chi router, middleware, handlers, error envelope
+│   │   │   ├── router.go         ← all routes declared here
+│   │   │   ├── middleware.go     ← request logging, CORS
+│   │   │   ├── errors.go         ← the JSON error shape
+│   │   │   ├── todos_handler.go  ← CRUD endpoints
+│   │   │   └── health_handler.go ← /healthz
+│   │   ├── todo/                 domain: service, model, validation
+│   │   └── store/                ⚙ GENERATED by sqlc — do not edit
+│   ├── sql/
+│   │   ├── queries.sql           ← your SQL lives here
+│   │   └── schema.sql            ← mirror of migrations, read by sqlc
+│   ├── migrations/               goose .sql files
+│   ├── tests/integration_test.go testcontainers-based tests
+│   ├── sqlc.yaml                 codegen config
+│   ├── .air.toml                 hot reload config
+│   └── Dockerfile
+├── frontend/
+│   ├── app/                      App Router: layout, page, providers
+│   ├── components/               TodoList, TodoItem, NewTodoForm, ErrorBanner
+│   ├── lib/                      api.ts (fetch wrappers), types.ts (shared shape)
+│   └── Dockerfile
+├── docker-compose.yml
+├── .env.example
+├── Makefile
+└── README.md
+</pre>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="request">
+  <h2>5. Anatomy of a request</h2>
+
+  <p>Trace a single <code>POST /api/v1/todos</code> from click to database. Knowing this path is
+  the single most useful thing you can learn about this codebase — most bugs live in one of
+  these stages.</p>
+
+  <div class="diagram">
+<pre>
+1. NewTodoForm (onSubmit)
+   └─ api.createTodo({title, description})                    lib/api.ts
+      └─ fetch POST ${BASE_URL}/todos                          lib/api.ts
+         BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
+
+2. CORS preflight (browser does this first for POST + JSON)
+   └─ OPTIONS /api/v1/todos  →  Access-Control-Allow-Origin: http://localhost:3000
+
+3. chi middleware chain                    httpapi/router.go
+   RequestID → RealIP → RequestLogger → Recoverer → CORS
+
+4. TodosHandler.Create                    httpapi/todos_handler.go
+   ├─ DecodeJSON  → 400 invalid_body on bad/extra JSON
+   ├─ Validate    → 400 validation_failed (title required, max 200)
+   ├─ svc.Create  → service layer
+   └─ WriteJSON(201, todo)
+
+5. Service.Create                          internal/todo/service.go
+   └─ store.CreateTodo(CreateTodoParams)    ← GENERATED, knows the SQL
+
+6. pgx/v5 executes INSERT ... RETURNING     (inside store/queries.sql.go)
+
+7. Row scanned into store.Todo, returned up the stack
+
+8. WriteJSON encodes it → 201 Created
+   {"id":"...","title":"...","done":false,"created_at":"2026-...Z"}
+
+9. TanStack Query: onMutated() → invalidate ['todos'] → refetch
+
+10. TodoList re-renders with the new item
+</pre>
+  </div>
+
+  <div class="callout">
+    <strong>Note step 9</strong>
+    <p>Mutations do not patch local state. They invalidate the <code>['todos']</code> query key,
+    which triggers a refetch. This is deliberately simple and always correct; if you later add
+    optimistic updates, be careful — the backend is the source of truth and can reject a write
+    with 400.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="layers">
+  <h2>6. The four backend layers</h2>
+
+  <p>The backend is four thin layers. Each one has exactly one job, and each depends only on the
+  layer beneath it. This is what keeps the code testable without a database.</p>
+
+  <div class="diagram">
+<pre>
+┌──────────────────────────────────────────────────────────────┐
+│ httpapi  (transport)                                          │
+│   parses HTTP, decodes JSON, validates, maps errors to codes   │
+│   knows: request/response, status codes, error envelope        │
+│   does NOT know: SQL, or what "not found" means in the domain  │
+├──────────────────────────────────────────────────────────────┤
+│ todo  (domain)                                                │
+│   Service: business rules, error translation (ErrNotFound)     │
+│   model.go: request/response structs + validation tags         │
+│   Store interface: what the domain needs, not what SQL provides │
+├──────────────────────────────────────────────────────────────┤
+│ store  (persistence — GENERATED)                              │
+│   typed methods per query in sql/queries.sql                  │
+│   knows: SQL, connection, scanning                             │
+├──────────────────────────────────────────────────────────────┤
+│ PostgreSQL                                                     │
+└──────────────────────────────────────────────────────────────┘
+
+config sits beside these: read once at startup, passed down explicitly.
+Nothing reaches for a global.
+</pre>
+  </div>
+
+  <h3>Why the <code>Store</code> interface exists</h3>
+  <p>The domain layer defines the interface it needs, and the generated code happens to satisfy
+  it. This is dependency inversion: the important direction is that <code>todo</code> knows
+  nothing about pgx.</p>
+
+  <pre>// internal/todo/service.go
+type Store interface {
+    ListTodos(ctx context.Context) ([]store.Todo, error)
+    GetTodo(ctx context.Context, id uuid.UUID) (store.Todo, error)
+    CreateTodo(ctx context.Context, arg store.CreateTodoParams) (store.Todo, error)
+    UpdateTodo(ctx context.Context, arg store.UpdateTodoParams) (store.Todo, error)
+    DeleteTodo(ctx context.Context, id uuid.UUID) (int64, error)
+}
+
+// *store.Queries satisfies this automatically — no adapter, no glue code.
+// Tests can pass a hand-written fake instead.
+</pre>
+
+  <div class="callout warn">
+    <strong>Gotcha when you change a query</strong>
+    <p>If you change a query's signature in <code>sql/queries.sql</code>, the
+    <code>Store</code> interface stops matching and the <em>compiler will tell you</em>. That is
+    the intended safety net — do not "fix" it by loosening the interface. Update the interface
+    to match reality.</p>
+  </div>
+
+  <h3>Error translation</h3>
+  <p>The service converts storage errors into one domain sentinel, and only the handler knows how
+  to turn that into an HTTP status:</p>
+
+  <pre>// service.go — domain meaning
+if errors.Is(err, pgx.ErrNoRows) {
+    return store.Todo{}, ErrNotFound
+}
+
+// todos_handler.go — HTTP meaning
+func (h *TodosHandler) handleServiceError(w http.ResponseWriter, err error) {
+    if errors.Is(err, todo.ErrNotFound) {
+        WriteError(w, http.StatusNotFound, "not_found", "todo not found")
+        return
+    }
+    h.log.Error("todo service error", slog.Any("err", err))
+    WriteInternal(w)
+}</pre>
+
+  <p>This is why the handler never imports <code>pgx</code>. If you add an error type, give it a
+  sentinel in <code>todo</code> and translate it once in the handler.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="frontend-arch">
+  <h2>7. Frontend architecture</h2>
+
+  <h3>Server vs client components</h3>
+  <p>Most of this app is <strong>client-rendered on purpose</strong>. Files starting with
+  <code>"use client"</code>:</p>
+  <ul>
+    <li><code>app/page.tsx</code> — the main list view</li>
+    <li><code>app/providers.tsx</code> — TanStack Query client</li>
+    <li><code>components/TodoList.tsx</code>, <code>TodoItem.tsx</code>, <code>NewTodoForm.tsx</code>, <code>ErrorBanner.tsx</code></li>
+  </ul>
+  <p><code>app/layout.tsx</code> stays a server component so it can render the static shell and
+  mount <code>&lt;Providers&gt;</code> around the interactive tree.</p>
+
+  <div class="callout">
+    <strong>Why not fetch on the server?</strong>
+    <p>Server Components would work for the initial list, but every mutation would then need a
+    Server Action or a revalidation, and you would lose the client cache that makes toggling feel
+    instant. Because the API is public and CORS is configured, client-side fetching is simpler
+    and honest. Revisit this if you add auth and want SSR for the first paint.</p>
+  </div>
+
+  <h3>The API client</h3>
+  <p><code>lib/api.ts</code> is the only place that knows about HTTP. It is deliberately thin and
+  has no React dependency, so it is trivially testable and could be reused in a script.</p>
+
+  <pre>const BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080/api/v1";
+
+class ApiClientError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details?: ApiError["error"]["details"];
+  // carries the backend's machine-readable code + per-field messages
+}
+
+async function request&lt;T&gt;(path: string, init?: RequestInit): Promise&lt;T&gt; {
+  const res = await fetch(`${BASE_URL}${path}`, { ...init, headers: { ... } });
+
+  if (res.status === 204) return undefined as T;   // DELETE has no body
+
+  const body = await res.text();
+  if (!res.ok) {
+    const err = (body as ApiError)?.error;
+    throw new ApiClientError(res.status, err?.code ?? "unknown_error",
+                             err?.message ?? `request failed with status ${res.status}`,
+                             err?.details);
+  }
+  return body as T;
+}
+
+export const api = {
+  listTodos, createTodo, updateTodo, deleteTodo
+};</pre>
+
+  <div class="callout ok">
+    <strong>The frontend does not duplicate validation</strong>
+    <p><code>NewTodoForm</code> validates with react-hook-form purely for instant feedback. The
+    backend still validates and still returns 400. If they ever disagree, the backend wins —
+    fix the backend rule and mirror it in the form.</p>
+  </div>
+
+  <h3>TanStack Query setup</h3>
+  <pre>// app/providers.tsx — lazy-init so each browser session gets its own cache
+const [client] = useState(() =&gt; new QueryClient({
+  defaultOptions: {
+    queries: { staleTime: 30_000, refetchOnWindowFocus: false, retry: 1 },
+  },
+}));</pre>
+
+  <h4>The one query key</h4>
+  <p>Everything reads and writes <code>['todos']</code>, declared once in
+  <code>app/page.tsx</code>. Child components receive <code>onMutated</code> rather than
+  importing the query client themselves. When you add a second list (e.g. filtered views), give
+  it a distinct key like <code>['todos', filter]</code> or invalidation will be wrong.</p>
+
+  <h4>Component tree</h4>
+  <div class="diagram">
+<pre>app/page.tsx  (owns useQuery + onMutated)
+├── NewTodoForm        react-hook-form → api.createTodo → onMutated()
+├── ErrorBanner        rendered when todosQuery.isError
+├── TodoList           maps items → TodoItem
+│   └── TodoItem       checkbox / inline edit / delete, each calls api.* then onMutated()
+└── footer             item count
+</pre>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="datalayer">
+  <h2>8. Data layer &amp; sqlc</h2>
+
+  <p>This is the part that surprises newcomers most, so read it twice.</p>
+
+  <h3>You never write the query code</h3>
+  <p>The workflow is always the same three steps:</p>
+  <ol class="steps">
+    <li>
+      <h4>Write SQL in <code>backend/sql/queries.sql</code></h4>
+      <pre>-- name: ListTodos :many
+SELECT id, title, description, done, created_at, updated_at
+FROM todos
+ORDER BY created_at DESC;
+
+-- name: GetTodo :one
+SELECT id, title, description, done, created_at, updated_at
+FROM todos
+WHERE id = $1;
+
+-- name: CreateTodo :one
+INSERT INTO todos (title, description)
+VALUES ($1, $2)
+RETURNING id, title, description, done, created_at, updated_at;
+
+-- name: UpdateTodo :one
+UPDATE todos
+SET
+    title       = COALESCE(sqlc.narg('title'),       title),
+    description = COALESCE(sqlc.narg('description'), description),
+    done        = COALESCE(sqlc.narg('done'),        done),
+    updated_at  = NOW()
+WHERE id = sqlc.arg('id')
+RETURNING id, title, description, done, created_at, updated_at;
+
+-- name: DeleteTodo :execrows
+DELETE FROM todos
+WHERE id = $1;</pre>
+    </li>
+    <li>
+      <h4>Regenerate</h4>
+      <pre>make generate</pre>
+      <p>This writes to <code>backend/internal/store/</code>. Those files are
+      <span class="tag gen">GENERATED</span> — never edit them; your changes vanish on the next
+      run.</p>
+    </li>
+    <li>
+      <h4>Call the new method from the service</h4>
+      <p>Then update the <code>Store</code> interface if the signature changed.</p>
+    </li>
+  </ol>
+
+  <h3>The annotation vocabulary</h3>
+  <table>
+    <thead><tr><th>Annotation</th><th>Returns</th><th>Use when</th></tr></thead>
+    <tbody>
+      <tr><td><code>:one</code></td><td>single row</td><td>Read or write-one. Errors with <code>pgx.ErrNoRows</code> when nothing matched — this is how you get a 404.</td></tr>
+      <tr><td><code>:many</code></td><td><code>[]Row</code></td><td>List queries. See the nil-slice warning below.</td></tr>
+      <tr><td><code>:exec</code></td><td><code>error</code> only</td><td>Almost never what you want — see below.</td></tr>
+      <tr><td><code>:execrows</code></td><td><code>(int64, error)</code></td><td>DELETE/UPDATE where you need to know whether a row actually existed.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout danger">
+    <strong>Why <code>:exec</code> cannot express "not found"</strong>
+    <p>A <code>:exec</code> DELETE never returns <code>pgx.ErrNoRows</code>. Deleting a row that
+    doesn't exist just reports success. Any <code>errors.Is(err, pgx.ErrNoRows)</code> check
+    downstream is dead code, and your API returns <code>204</code> for a missing id instead of
+    <code>404</code>. Use <code>:execrows</code> and branch on <code>affected == 0</code>.</p>
+  </div>
+
+  <div class="callout warn">
+    <strong>Nil slices serialise to <code>null</code></strong>
+    <p>A <code>:many</code> query returning zero rows gives a nil slice, which Go's JSON encoder
+    writes as <code>null</code>, not <code>[]</code>. The frontend then does
+    <code>items.length</code> and throws a TypeError. The service normalises it:</p>
+    <pre>if items == nil {
+    items = []store.Todo{}
+}</pre>
+    <p>Keep this in mind for every new <code>:many</code> query.</p>
+  </div>
+
+  <h3>Type overrides — and why they exist</h3>
+  <p>By default sqlc maps Postgres types to pgx's wrapper structs, which is wrong for this
+  codebase. <code>backend/sqlc.yaml</code> overrides them:</p>
+
+  <pre>gen:
+  go:
+    sql_package: "pgx/v5"
+    emit_json_tags: true
+    emit_pointers_for_null_types: true
+    overrides:
+      - db_type: "uuid"
+        go_type: { import: "github.com/google/uuid", package: "uuid", type: "UUID" }
+      - db_type: "timestamptz"
+        go_type: { import: "time", type: "Time" }   # no `package` key here</pre>
+
+  <p>This is not cosmetic. Without it, <code>store.Todo.ID</code> is
+  <code>pgtype.UUID</code>, which serialises as:</p>
+  <pre>{"id":{"Bytes":"b7d4...","Valid":true},"created_at":{"Time":"...","Valid":true}}</pre>
+  <p>The frontend expects <code>{"id":"b7d4...","created_at":"2026-...Z"}</code> and would render
+  garbage. The <code>package</code> key is also required for the <code>uuid</code> import but must
+  be <em>omitted</em> for <code>time</code> — setting it produces a duplicate
+  <code>time "time"</code> import and the build fails with <em>"time redeclared in this block"</em>.</p>
+
+  <h3>Why <code>sqlc.narg</code> in the update query</h3>
+  <p><code>PATCH</code> is a partial update: omitted fields must be left alone. A plain
+  <code>$1</code> would overwrite them. <code>sqlc.narg()</code> makes a parameter nullable, and
+  <code>COALESCE(narg, existing_column)</code> means "keep the old value when not supplied". The
+  generated <code>UpdateTodoParams</code> uses <code>*string</code> / <code>*bool</code>, which is
+  why <code>UpdateRequest</code> in <code>model.go</code> uses pointers — <code>nil</code> means
+  "don't change".</p>
+</section>
+
+<!-- ============================================ -->
+<section id="errors">
+  <h2>9. Errors &amp; validation</h2>
+
+  <h3>One error shape, everywhere</h3>
+  <p>Every non-2xx response uses the same envelope, defined in
+  <code>internal/httpapi/errors.go</code>:</p>
+  <pre>{
+  "error": {
+    "code": "validation_failed",
+    "message": "request body is invalid",
+    "details": [ { "field": "title", "message": "is required" } ]
+  }
+}</pre>
+
+  <table>
+    <thead><tr><th>Code</th><th>HTTP</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>validation_failed</code></td><td>400</td><td>A field rule was violated. <code>details</code> is populated.</td></tr>
+      <tr><td><code>invalid_body</code></td><td>400</td><td>Malformed JSON, or an unknown field (the decoder uses <code>DisallowUnknownFields</code>).</td></tr>
+      <tr><td><code>invalid_id</code></td><td>400</td><td>Path id is not a valid UUID.</td></tr>
+      <tr><td><code>not_found</code></td><td>404</td><td>No row with that id.</td></tr>
+      <tr><td><code>internal_error</code></td><td>500</td><td>Anything unexpected. The detail is logged, never returned.</td></tr>
+    </tbody>
+  </table>
+
+  <p><code>details</code> is always an array, never <code>null</code> — the error helper coerces it.
+  The frontend's <code>ApiError</code> type in <code>lib/types.ts</code> mirrors this exactly.</p>
+
+  <h3>Validation rules</h3>
+  <p>Rules live as struct tags in <code>internal/todo/model.go</code>, right next to the fields:</p>
+  <pre>type CreateRequest struct {
+    Title       string `json:"title" validate:"required,max=200"`
+    Description string `json:"description" validate:"omitempty,max=2000"`
+}
+
+type UpdateRequest struct {
+    Title       *string `json:"title,omitempty" validate:"omitempty,max=200"`
+    Description *string `json:"description,omitempty" validate:"omitempty,max=2000"`
+    Done        *bool   `json:"done,omitempty"`
+}</pre>
+
+  <p>Note <code>omitempty</code> on the update fields: for a pointer, "empty" means nil, so an
+  absent field skips validation. Without it, a PATCH that omits the title would fail as
+  "title is required" — which would make partial updates impossible.</p>
+
+  <h3>Turning library errors into friendly text</h3>
+  <p>Raw validator messages ("field validation failed") are useless to end users.
+  <code>internal/todo/validate.go</code> maps each tag to a human sentence:</p>
+  <pre>func friendlyMessage(fe validator.FieldError) string {
+    switch fe.Tag() {
+    case "required": return "is required"
+    case "max":     return fmt.Sprintf("must be at most %s characters", fe.Param())
+    case "min":     return fmt.Sprintf("must be at least %s characters", fe.Param())
+    default:        return "is invalid"
+    }
+}</pre>
+
+  <p>When you add a validation tag, add a case here too — otherwise users see
+  "is invalid" with no explanation.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="cors">
+  <h2>10. CORS</h2>
+
+  <p>Because the browser loads the app from <code>:3000</code> and calls the API on
+  <code>:8080</code>, that is a cross-origin request. The backend opts in explicitly in
+  <code>internal/httpapi/middleware.go</code>:</p>
+
+  <pre>func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
+    if len(allowedOrigins) == 0 {
+        allowedOrigins = []string{"http://localhost:3000"}
+    }
+    return cors.Handler(cors.Options{
+        AllowedOrigins:   allowedOrigins,
+        AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+        AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Request-ID"},
+        ExposedHeaders:   []string{"X-Request-ID"},
+        AllowCredentials: false,
+        MaxAge:           300,
+    })
+}</pre>
+
+  <div class="callout warn">
+    <strong>Wildcard origins are a security decision, not a shortcut</strong>
+    <p>With no auth there is nothing to steal yet. The moment you add cookies or
+    <code>Authorization</code> headers, <code>AllowedOrigins: ["*"]</code> becomes a real
+    vulnerability. Keep the explicit allowlist.</p>
+  </div>
+
+  <h3>When the browser blocks you</h3>
+  <p>Symptoms: the UI loads but every action fails, and the console shows a CORS error. The
+  origin must match <em>exactly</em> including port and scheme. Check:</p>
+  <ol>
+    <li><code>CORS_ALLOWED_ORIGINS</code> in <code>.env</code> matches the browser URL</li>
+    <li>It's a comma-separated list, whitespace-trimmed — see <code>splitCSV</code> in
+        <code>config.go</code></li>
+    <li>You changed the frontend port? Update this too, then restart the backend</li>
+  </ol>
+</section>
+
+<!-- ============================================ -->
+<section id="migrations">
+  <h2>11. Migrations</h2>
+
+  <p>goose applies pending migrations at every backend start
+  (<code>runMigrations</code> in <code>cmd/server/main.go</code>), so there is no separate
+  migration step in normal use.</p>
+
+  <pre>-- +goose Up
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE todos (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    done        BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX todos_created_at_idx ON todos (created_at DESC);
+
+-- +goose Down
+DROP TABLE IF EXISTS todos;</pre>
+
+  <h3>Adding a migration</h3>
+  <ol class="steps">
+    <li>
+      <h4>Create <code>backend/migrations/00002_your_change.sql</code></h4>
+      <p>Numbering is sequential. Always write a <code>Down</code> section — it is your rollback.</p>
+    </li>
+    <li>
+      <h4>Mirror the final schema into <code>backend/sql/schema.sql</code></h4>
+      <p>This is not optional. sqlc reads <code>schema.sql</code>, not the migrations, to
+      understand your tables. Forget this and sqlc reports unknown columns or generates the wrong
+      types.</p>
+    </li>
+    <li>
+      <h4>Restart the backend and regenerate</h4>
+      <pre>docker compose restart backend
+make generate</pre>
+    </li>
+  </ol>
+
+  <div class="callout danger">
+    <strong>Never edit an applied migration</strong>
+    <p>goose records which version ran. Editing an old file means existing databases never
+    receive your change, and the codebase and the schema silently diverge. Always add a new
+    numbered file.</p>
+  </div>
+
+  <p>Manual control, when you need it:</p>
+  <pre>make migrate-up       # apply pending
+make migrate-down     # roll back one step</pre>
+</section>
+
+<!-- ============================================ -->
+<section id="config">
+  <h2>12. Configuration</h2>
+
+  <p>All configuration is environment variables with defaults, loaded once in
+  <code>internal/config/config.go</code> and passed explicitly down the call chain. Nothing
+  reads <code>os.Getenv</code> at request time.</p>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Read by</th></tr></thead>
+    <tbody>
+      <tr><td><code>DATABASE_URL</code></td><td><code>postgres://todo:todo@postgres:5432/todo?sslmode=disable</code></td><td>backend (required, validated)</td></tr>
+      <tr><td><code>BACKEND_PORT</code></td><td><code>8080</code></td><td>backend (range-checked)</td></tr>
+      <tr><td><code>APP_ENV</code></td><td><code>development</code></td><td>backend (logged at startup)</td></tr>
+      <tr><td><code>LOG_LEVEL</code></td><td><code>info</code></td><td>backend</td></tr>
+      <tr><td><code>CORS_ALLOWED_ORIGINS</code></td><td><code>http://localhost:3000</code></td><td>backend (comma-separated)</td></tr>
+      <tr><td><code>NEXT_PUBLIC_API_BASE_URL</code></td><td><code>http://localhost:8080/api/v1</code></td><td>frontend</td></tr>
+      <tr><td><code>POSTGRES_USER</code> / <code>_PASSWORD</code> / <code>_DB</code></td><td><code>todo</code> / <code>todo</code> / <code>todo</code></td><td>postgres + the URL built for the backend</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout">
+    <strong><code>NEXT_PUBLIC_</code> is baked in at build time</strong>
+    <p>Next.js inlines <code>NEXT_PUBLIC_*</code> variables into the client bundle when it builds.
+    Changing it requires restarting the frontend container, not just a refresh. For a
+    non-public backend URL, drop the prefix and read it server-side.</p>
+  </div>
+
+  <p>Copy <code>.env.example</code> to <code>.env</code> on first run. Compose supplies defaults
+  for everything, so the stack boots even without it — but explicit is better when debugging.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="running">
+  <h2>13. Running the stack</h2>
+
+  <h3>First run</h3>
+  <p>The <code>make generate</code> step is not optional. sqlc output lives in
+  <code>internal/store/</code> and is not checked in, so the backend cannot compile until it
+  runs.</p>
+
+  <pre># macOS / Linux / WSL / Git Bash
+cp .env.example .env
+docker compose build
+docker compose up -d postgres
+make generate
+docker compose up -d
+
+# Windows PowerShell (no make or cp by default)
+Copy-Item .env.example .env
+docker compose build
+docker compose up -d postgres
+docker compose run --rm backend sh -c "go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest &amp;&amp; sqlc generate"
+docker compose up -d</pre>
+
+  <p>Then open <a href="http://localhost:3000">http://localhost:3000</a>.</p>
+
+  <h3>Make targets</h3>
+  <table>
+    <thead><tr><th>Target</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>make up</code></td><td>Build and start everything in the background</td></tr>
+      <tr><td><code>make down</code></td><td>Stop and remove containers (keeps data)</td></tr>
+      <tr><td><code>make clean</code></td><td><code>down -v</code> — also deletes the <code>pgdata</code> volume</td></tr>
+      <tr><td><code>make logs</code></td><td>Tail all container logs</td></tr>
+      <tr><td><code>make test</code></td><td>Run integration tests inside the backend container</td></tr>
+      <tr><td><code>make generate</code></td><td>Install sqlc in the container and run codegen</td></tr>
+      <tr><td><code>make sqlc</code></td><td>Run <code>sqlc generate</code> using a host install</td></tr>
+      <tr><td><code>make migrate-up</code> / <code>migrate-down</code></td><td>Apply / roll back migrations</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Hot reload</h3>
+  <p>Both services reload on save. The backend runs under <code>air</code>, which watches
+  <code>backend/</code> and reruns <code>go build -o ./tmp/server ./cmd/server</code> on change.
+  The frontend is the Next.js dev server.</p>
+
+  <div class="callout warn">
+    <strong>air uses filesystem polling, and that is deliberate</strong>
+    <p><code>.air.toml</code> sets <code>poll = true</code>. With the default
+    <code>poll = false</code>, air relies on inotify, which does not cross Docker Desktop's
+    bind-mount on Windows or macOS. The symptom is nasty: <strong>no error, just no reload</strong> —
+    you edit code and keep testing the old binary. If you ever see that, check this setting first.</p>
+  </div>
+
+  <p>One related quirk: <code>internal/store</code> is in air's <code>exclude_dir</code>, so
+  regenerating sqlc output will <em>not</em> trigger a rebuild. Touch a watched file, or restart the
+  backend.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="testing">
+  <h2>14. Tests</h2>
+
+  <p>There is one test file, <code>backend/tests/integration_test.go</code>, and it is an
+  <strong>integration</strong> test — not a unit test. It boots a real Postgres 16 container with
+  <code>testcontainers-go</code>, runs the real migrations, builds the real router, and drives it
+  with <code>httptest</code>.</p>
+
+  <pre>// setup(): the heart of the suite
+1. Start a Postgres 16 container (testcontainers)
+2. Open it via database/sql + pgx stdlib driver
+3. Run goose migrations against it
+4. Build the pgxpool the app uses in production
+5. Construct store → service → validator → router
+6. Return (http.Handler, cleanup)
+
+router, cleanup := setup(t)
+defer cleanup()</pre>
+
+  <p>Because it uses the real router, the tests cover routing, middleware, validation, the
+  service layer and SQL in one pass — a bug in any of those surfaces as a test failure.</p>
+
+  <h3>What is covered</h3>
+  <ul>
+    <li>Happy path: create → list → get → patch (toggle) → delete → list (empty)</li>
+    <li>Validation: empty title → 400</li>
+    <li>Not found: unknown id → 404</li>
+  </ul>
+
+  <h3>What is not covered</h3>
+  <ul>
+    <li>Frontend behaviour — there are no component or E2E tests</li>
+    <li>CORS preflight specifics</li>
+    <li>Partial-PATCH field preservation (i.e. patching only <code>title</code> must not clear
+        <code>done</code>) — worth adding</li>
+    <li>Delete-twice → the second call must 404</li>
+  </ul>
+
+  <div class="callout ok">
+    <strong>Adding a test is the fastest way to learn this codebase</strong>
+    <p>Copy the shape of the happy-path test. The whole stack is already wired in
+    <code>setup()</code>, so a new assertion is a few lines. If a bug ever escapes, add the
+    missing assertion here before fixing it.</p>
+  </div>
+
+  <pre>docker compose run --rm backend go test ./...     # or: make test</pre>
+</section>
+
+<!-- ============================================ -->
+<section id="troubleshooting">
+  <h2>15. Troubleshooting</h2>
+
+  <h4>Backend container is up but /healthz fails</h4>
+  <pre>docker compose logs backend</pre>
+  <p>A compile error means air never started the binary. Read the first error, fix it, and the
+  binary starts automatically.</p>
+
+  <h4>Image build fails on <code>COPY go.mod go.sum ./</code></h4>
+  <p><code>go.sum</code> doesn't exist on a fresh clone because it is generated, not committed. The
+  Dockerfile deliberately copies only <code>go.mod</code>; <code>go.sum</code> arrives later via
+  <code>COPY . .</code>. Don't "fix" this by committing an empty <code>go.sum</code>.</p>
+
+  <h4><code>sqlc generate</code> fails to parse the config</h4>
+  <p>sqlc validates every config key strictly and refuses to start on an unknown one. Read the
+  line number in the error — it points at the offending key. Known valid Go options:
+  <code>emit_json_tags</code>, <code>emit_pointers_for_null_types</code>, <code>sql_package</code>,
+  <code>overrides</code> (nested under <code>gen.go</code>).</p>
+
+  <h4>Generated code has <code>pgtype.UUID</code> instead of <code>uuid.UUID</code></h4>
+  <p>The overrides aren't matching. They must sit under <code>gen.go.overrides</code> (not at the
+  top level) and use the bare type names <code>uuid</code> / <code>timestamptz</code>.</p>
+
+  <h4>Build fails with "time redeclared in this block"</h4>
+  <p>You set <code>package: "time"</code> on the timestamptz override. Omit the
+  <code>package</code> key — the import path's last segment is already the package name.</p>
+
+  <h4>Edits are not showing up in the API</h4>
+  <p>Check air's <code>poll</code> setting (§13), then confirm the file isn't inside
+  <code>internal/store</code> (excluded from watching). Restart the backend as a blunt fix.</p>
+
+  <h4>CORS error in the browser console</h4>
+  <p><code>CORS_ALLOWED_ORIGINS</code> must match the browser origin exactly, scheme and port
+  included. Restart the backend after changing it — config is read once at startup.</p>
+
+  <h4>Port already allocated</h4>
+  <pre># in .env
+BACKEND_PORT=8081
+POSTGRES_PORT=5433
+# then: docker compose down &amp;&amp; docker compose up -d</pre>
+  <p>If you move the backend port, also update <code>NEXT_PUBLIC_API_BASE_URL</code>.</p>
+
+  <h4>Start completely fresh</h4>
+  <pre>docker compose down -v    # removes containers AND the pgdata volume</pre>
+</section>
+
+<!-- ============================================ -->
+<section id="lessons">
+  <h2>16. Bugs already hit (and their lessons)</h2>
+
+  <p>This app shipped with four real bugs. They are worth knowing because each one is a trap
+  that catches people regularly in this stack.</p>
+
+  <h4>1. sqlc generated pgx types, breaking the API contract</h4>
+  <p><span class="tag rm">bug</span> The service passed <code>uuid.UUID</code>; sqlc generated
+  methods expecting <code>pgtype.UUID</code>. The backend did not compile. Worse, had it
+  compiled without the override, the API would have returned
+  <code>{"id":{"Bytes":"...","Valid":true}}</code> — valid JSON, wrong shape, and a crash only in
+  the browser.</p>
+  <p><strong>Lesson:</strong> verify the actual JSON body, not just that it compiles. Curl
+  <code>GET /api/v1/todos</code> and read the bytes.</p>
+
+  <h4>2. DELETE returned 204 for a missing todo</h4>
+  <p><span class="tag rm">bug</span> <code>DeleteTodo</code> was <code>:exec</code>, so the
+  <code>pgx.ErrNoRows</code> branch was unreachable and deleting a nonexistent id returned
+  <code>204</code>. Clients could not distinguish "deleted" from "never existed".</p>
+  <p><strong>Lesson:</strong> choose the sqlc annotation that carries the information you need —
+  <code>:execrows</code> for existence checks.</p>
+
+  <h4>3. Empty list serialised as <code>null</code></h4>
+  <p><span class="tag rm">bug</span> A <code>:many</code> query with no rows returns a nil slice,
+  which Go writes as <code>null</code>. The frontend does <code>items.length</code> and throws.
+  Fixed by normalising to <code>[]store.Todo{}</code> in the service.</p>
+  <p><strong>Lesson:</strong> Go's nil slice is <code>null</code> in JSON, never <code>[]</code>.</p>
+
+  <h4>4. Hot reload silently did nothing</h4>
+  <p><span class="tag rm">bug</span> air with <code>poll = false</code> never sees host file changes
+  through a Docker Desktop bind mount. No error, no rebuild — you debug code that isn't running.
+  Fixed with <code>poll = true</code>.</p>
+  <p><strong>Lesson:</strong> when "my change did nothing", verify the running binary is the code
+  you just wrote before investigating the code itself.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="recipes">
+  <h2>17. Common change recipes</h2>
+
+  <h3>Add a field to todos (e.g. <code>priority</code>)</h3>
+  <ol class="steps">
+    <li>
+      <h4>Migration <span class="tag new">add</span></h4>
+      <pre>-- backend/migrations/00002_add_priority.sql
+-- +goose Up
+ALTER TABLE todos ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium';
+-- +goose Down
+ALTER TABLE todos DROP COLUMN priority;</pre>
+    </li>
+    <li>
+      <h4>Mirror into <code>sql/schema.sql</code></h4>
+      <p>Add the same column to the <code>CREATE TABLE todos</code> block. Required — sqlc reads
+      this file, not the migrations.</p>
+    </li>
+    <li>
+      <h4>Regenerate and wire the types</h4>
+      <pre>docker compose restart backend
+make generate</pre>
+      <p><code>store.Todo</code> now has <code>Priority</code>. The compiler will point at every
+      place that needs updating — that list is your change list.</p>
+    </li>
+    <li>
+      <h4>Add to the Go request structs</h4>
+      <pre>// internal/todo/model.go
+type CreateRequest struct {
+    Title    string `json:"title" validate:"required,max=200"`
+    Priority string `json:"priority" validate:"omitempty,oneof=low medium high"`
+}</pre>
+    </li>
+    <li>
+      <h4>Include it in the SQL</h4>
+      <pre>-- name: CreateTodo :one
+INSERT INTO todos (title, description, priority)
+VALUES ($1, $2, $3)
+RETURNING id, title, description, done, priority, created_at, updated_at;</pre>
+    </li>
+    <li>
+      <h4>Map it in the service</h4>
+      <pre>func (s *Service) Create(ctx context.Context, req CreateRequest) (store.Todo, error) {
+    p := req.Priority
+    if p == "" { p = "medium" }
+    return s.store.CreateTodo(ctx, store.CreateTodoParams{
+        Title: req.Title, Description: req.Description, Priority: p,
+    })
+}</pre>
+    </li>
+    <li>
+      <h4>Update the frontend type and UI</h4>
+      <p><code>lib/types.ts</code>, then the components. <code>api.ts</code> needs a new field in
+      <code>createTodo</code>.</p>
+    </li>
+    <li>
+      <h4>Add a test and verify the wire format</h4>
+      <pre>curl -X POST http://localhost:8080/api/v1/todos \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"x","priority":"high"}'</pre>
+    </li>
+  </ol>
+
+  <div class="callout">
+    <strong>Two rules that save time</strong>
+    <p><strong>1.</strong> Never edit <code>internal/store/</code> — it is regenerated. If a query
+    is missing, add it to <code>sql/queries.sql</code>.<br />
+    <strong>2.</strong> Never forget <code>sql/schema.sql</code>. It is the step everyone skips,
+    and the resulting sqlc error is confusing.</p>
+  </div>
+
+  <h3>Add a new endpoint</h3>
+  <ol>
+    <li>Add a named query to <code>sql/queries.sql</code></li>
+    <li><code>make generate</code></li>
+    <li>Add the method to the <code>Store</code> interface in <code>service.go</code></li>
+    <li>Add a service method that translates errors to <code>ErrNotFound</code></li>
+    <li>Add a handler in <code>todos_handler.go</code> using <code>DecodeJSON</code> /
+        <code>WriteError</code></li>
+    <li>Register the route in <code>router.go</code> (also add the method to the CORS
+        <code>AllowedMethods</code> list if it's not a standard verb)</li>
+    <li>Add a wrapper to <code>lib/api.ts</code> and a test</li>
+  </ol>
+
+  <h3>Add a second resource (e.g. projects)</h3>
+  <p>Follow the same vertical slice, but create a new domain package
+  <code>internal/project/</code> with its own <code>Service</code> and <code>Store</code>
+  interface, and its own <code>internal/store</code> generated package. Add its routes under
+  <code>r.Route("/api/v1", ...)</code> in <code>router.go</code>. Do not put projects in
+  <code>internal/todo</code> — the boundary is what keeps each package small.</p>
+
+  <h3>Add pagination</h3>
+  <p>Change <code>ListTodos</code> to accept <code>sqlc.arg('limit')</code> and
+  <code>sqlc.arg('offset')</code>, read them in the handler, and return an envelope like
+  <code>{"items":[...], "total":N, "limit":L, "offset":O}</code>. Keep returning
+  <code>[]</code> not <code>null</code> on page 0, and update the <code>Todo</code> list type on
+  the frontend accordingly.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="roadmap">
+  <h2>18. Where to grow it</h2>
+
+  <p>Each of these is a real feature, not a small fix. Listed roughly by how much it reshapes the
+  architecture.</p>
+
+  <h4>Low effort, high value</h4>
+  <ul>
+    <li><strong>Frontend tests</strong> — Vitest + React Testing Library for the components, or
+        Playwright for a true click-through. Currently the UI has zero automated coverage.</li>
+    <li><strong>Backend unit tests</strong> — a fake <code>Store</code> makes
+        <code>internal/todo</code> testable with no containers at all. Fast, and the
+        <code>Store</code> interface already makes this easy.</li>
+    <li><strong>More integration assertions</strong> — partial-PATCH preservation, delete-twice,
+        CORS preflight. All cheap given <code>setup()</code> already builds the full stack.</li>
+    <li><strong>A <code>.env.local</code> story</strong> — so each developer can override ports
+        without touching the shared file.</li>
+  </ul>
+
+  <h4>Medium effort</h4>
+  <ul>
+    <li><strong>Production Dockerfile</strong> — multi-stage build, non-root user, static binary.
+        Note the Go image must be bumped in step with any tool that needs a newer Go.</li>
+    <li><strong>CI</strong> — <code>go vet</code>, <code>gofmt</code>, sqlc drift detection
+        (regenerate and <code>git diff --exit-code</code>), <code>npm run build</code>. sqlc drift
+        is the one worth having early: it catches someone editing a query without regenerating.</li>
+    <li><strong>Optimistic updates</strong> — tick a checkbox and update the cache before the
+        round trip. Requires a rollback path on failure.</li>
+    <li><strong>Health/readiness split</strong> — <code>/healthz</code> (process is up) vs
+        <code>/readyz</code> (DB reachable), so an orchestrator does not route traffic to a
+        backend that cannot reach Postgres.</li>
+  </ul>
+
+  <h4>Larger redesigns</h4>
+  <ul>
+    <li><strong>Authentication</strong> — a <code>users</code> table, a
+        <code>user_id</code> on <code>todos</code>, session or JWT middleware, and scoping every
+        query by owner. The <code>Store</code> interface is the seam: the queries change, the
+        service barely does. Every <code>todos</code> query gains <code>WHERE user_id = ?</code>.</li>
+    <li><strong>Multi-tenancy / sharing</strong> — a join table, and the query layer starts
+        returning rows the caller may not see. Authorisation stops being implicit and needs to be
+        deliberate in the service layer.</li>
+    <li><strong>Real-time</strong> — SSE or WebSocket so multiple browsers stay in sync. TanStack
+        Query already exposes subscription hooks; the backend needs a change-notification path
+        (Postgres <code>LISTEN/NOTIFY</code> is the cheap version).</li>
+    <li><strong>SSR</strong> — move the initial list fetch into a Server Component. The client
+        cache and the CORS arrangement would both simplify, at the cost of a more complex data
+        flow. Only worth it if the first paint matters.</li>
+  </ul>
+
+  <div class="callout warn">
+    <strong>Adding auth changes the threat model</strong>
+    <p>Before that work lands: review the CORS allowlist (§10), stop returning detail in 500s
+    (already the case), and make sure <code>DecodeJSON</code>'s
+    <code>DisallowUnknownFields</code> stays on. None of this matters much for a single-user app
+    and all of it matters the day it is multi-user.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="checklist">
+  <h2>19. Pre-merge checklist</h2>
+
+  <p>Work through this before asking for review. It catches the failure modes this codebase is
+  actually prone to.</p>
+
+  <ol class="steps">
+    <li>
+      <h4>Did you update <code>sql/schema.sql</code> with any migration?</h4>
+      <p>If you added a migration and forgot this, sqlc generates wrong or fails confusingly.</p>
+    </li>
+    <li>
+      <h4>Did you run <code>make generate</code> and commit the result?</h4>
+      <p><code>internal/store/</code> is generated but <em>is</em> committed so the tree builds
+      without a toolchain. If your change added a query, the generated file must be updated too.</p>
+    </li>
+    <li>
+      <h4>Did you hand-edit anything in <code>internal/store/</code>?</h4>
+      <p>It is overwritten on every <code>make generate</code>. Move the logic into
+      <code>queries.sql</code>.</p>
+    </li>
+    <li>
+      <h4>Does a new <code>:many</code> query normalise its nil slice?</h4>
+      <p>Otherwise the API returns <code>null</code> and the frontend crashes on
+      <code>.length</code>.</p>
+    </li>
+    <li>
+      <h4>Does a new DELETE/UPDATE need a 404?</h4>
+      <p>Use <code>:execrows</code> and check the affected count. <code>:exec</code> cannot express
+      it.</p>
+    </li>
+    <li>
+      <h4>Did you add a validation rule with a friendly message?</h4>
+      <p>A new tag in <code>validate:</code> needs a matching case in
+      <code>friendlyMessage</code>, or users see "is invalid".</p>
+    </li>
+    <li>
+      <h4>Did you update <code>lib/types.ts</code> alongside the Go model?</h4>
+      <p>These two are maintained by hand and must match. There is no generated contract.</p>
+    </li>
+    <li>
+      <h4>Have you curl'd the endpoint and read the raw JSON?</h4>
+      <p>Status codes are not enough — verify field names and value <em>shapes</em>. This is how
+      bug #1 got shipped.</p>
+    </li>
+    <li>
+      <h4>Do <code>make test</code> and the frontend build pass?</h4>
+      <pre>make test
+cd frontend &amp;&amp; npm run build</pre>
+    </li>
+  </ol>
+
+  <hr>
+  <p style="color:var(--ink-soft);font-size:0.9rem">
+    When you find a bug worth remembering, add it to §16 with the lesson, not just the symptom.
+    This app has already produced four non-obvious ones, and the next person will hit at least one
+    of the same traps.
+  </p>
+</section>
+
+</main>
+</div>
+</body>
+</html>

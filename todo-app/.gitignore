@@ -1,0 +1,39 @@
+# Local env
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Backend
+backend/tmp/
+backend/build-errors.log
+backend/internal/store/db.go
+backend/internal/store/models.go
+backend/internal/store/queries.sql.go
+backend/*.test
+backend/coverage.out
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/*.log
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Node
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Go
+*.test
+*.out

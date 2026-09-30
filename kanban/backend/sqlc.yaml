@@ -1,0 +1,33 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "sql/queries.sql"
+    schema: "sql/schema.sql"
+    gen:
+      go:
+        package: "store"
+        out: "internal/store"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_pointers_for_null_types: true
+        # Map Postgres native types onto plain Go types. Without these, sqlc
+        # emits pgx pgtype wrappers (pgtype.UUID / pgtype.Timestamptz / pgtype.Date)
+        # which serialise to {"Bytes":"...","Valid":true} instead of the plain
+        # UUID / ISO-8601 strings the frontend contract expects.
+        overrides:
+          - db_type: "uuid"
+            go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+          - db_type: "timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+          # NOTE: there is deliberately no `date` override. sqlc 1.31 does not
+          # match a bare "date" or "pg_catalog.date" override against the
+          # pgx/v5 built-in mapping, so cards.due_date stays pgtype.Date.
+          # That is fine and actually preferable here: pgtype.Date carries a
+          # Valid flag, which is exactly the NULL-vs-set distinction a
+          # nullable calendar date needs. The API layer formats it as
+          # "2006-01-02" so it can never shift a day in negative-offset zones.

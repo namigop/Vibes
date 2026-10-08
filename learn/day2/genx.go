@@ -24,3 +24,25 @@ func First[T any](source []T, pred func(T) bool) (T, error) {
 
 	return result, fmt.Errorf("no item found")
 }
+
+func FirstOrDefault[T any](source []T, pred func(T) bool) T {
+	fmt.Println("source", source)
+	for _, item := range source {
+		if pred(item) {
+			return item
+		}
+	}
+
+	var zero T
+	return zero
+}
+
+func Select[T any, R any](source []T, selector func(T) R) []R {
+	var result []R
+	for _, item := range source {
+		i := selector(item)
+		result = append(result, i)
+	}
+
+	return result
+}

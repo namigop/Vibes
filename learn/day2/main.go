@@ -17,12 +17,19 @@ func main() {
 	fmt.Println("odd", odd)
 	fmt.Println("odd2", odd2)
 
-	num, err := First(nums, func(i int) bool { return i%2 == 0 })
+	num, err := First(nums, func(i int) bool { return i%2 == 1 })
 	if err != nil {
 		fmt.Println(err)
 	}
 
 	fmt.Println("first odd", num)
+
+	def := FirstOrDefault(nums, func(i int) bool { return i%2 == 1 })
+	fmt.Println("FirstOrDefault", def)
+
+	text2 := Select(nums, func(i int) string { return fmt.Sprintf("Number: %d", i) })
+	fmt.Println("Select/Map", text2)
+
 }
 
 func ErrFoo() {

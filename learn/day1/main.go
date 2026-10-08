@@ -57,7 +57,7 @@ func main() {
 		fmt.Printf("%d ", k)
 		for _, word := range v {
 			fmt.Printf("%v ", word)
-			time.Sleep(25 * time.Millisecond)
+			//time.Sleep(5 * time.Millisecond)
 		}
 		fmt.Println()
 	}
@@ -71,7 +71,7 @@ func main() {
 
 	for word, count := range wordCount {
 		fmt.Printf("%s: %d\n", word, count)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	os.Exit(0)
@@ -87,12 +87,13 @@ func countWords(filePath string) (map[string]int, error) {
 
 	wordCount := map[string]int{}
 	scanner := bufio.NewScanner(file)
-	regex := regexp.MustCompile(`\w+`) // Regex to match non-word characters
+	regex := regexp.MustCompile(`\w+`) // Regex to match a word
 	for scanner.Scan() {
 		line := scanner.Text()
 		//parts := strings.Split(line, " ")
 		parts := regex.FindAllString(line, -1)
 		for _, word := range parts {
+			word = strings.ToLower(word)
 			wordCount[word] += 1
 		}
 	}

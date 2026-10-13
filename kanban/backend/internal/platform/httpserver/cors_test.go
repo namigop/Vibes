@@ -1,4 +1,4 @@
-package api
+package httpserver
 
 import (
 	"net/http"
@@ -6,8 +6,16 @@ import (
 	"strings"
 	"testing"
 
-	"kanban/internal/config"
+	"kanban/internal/platform/config"
 )
+
+// newCORSRouter builds a router whose only job in these tests is the CORS
+// middleware. The bearer signer is nil because no route is ever reached: a
+// preflight is answered by the middleware before routing.
+func newCORSRouter(t *testing.T, cfg config.Config) http.Handler {
+	t.Helper()
+	return New(cfg, nil).corsMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+}
 
 // A browser sends a preflight before any request carrying `Authorization`,
 // because that header is not CORS-safelisted. If the preflight does not
@@ -22,7 +30,8 @@ func TestPreflightAllowsAuthorizationHeader(t *testing.T) {
 	cfg := config.Load()
 	cfg.CORSAllowedOrigins = []string{"http://localhost:3000"}
 
-	handler := corsMiddleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router := New(cfg, nil)
+	handler := router.corsMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("a preflight must not reach the wrapped handler")
 	}))
 
@@ -61,7 +70,7 @@ func TestPreflightAllowsAllMethodsUsedByTheClient(t *testing.T) {
 	cfg := config.Load()
 	cfg.CORSAllowedOrigins = []string{"http://localhost:3000"}
 
-	handler := corsMiddleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	handler := newCORSRouter(t, cfg)
 
 	req := httptest.NewRequest(http.MethodOptions, "/api/v1/boards", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -81,7 +90,7 @@ func TestCORSRejectsUnknownOriginInProduction(t *testing.T) {
 	cfg.Env = "production"
 	cfg.CORSAllowedOrigins = []string{"https://kanban.example.com"}
 
-	handler := corsMiddleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	handler := newCORSRouter(t, cfg)
 
 	t.Run("known origin is echoed", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/boards", nil)
@@ -107,9 +116,7 @@ func TestCORSRejectsUnknownOriginInProduction(t *testing.T) {
 }
 
 func TestOriginAllowedLoopbackOnlyInDev(t *testing.T) {
-	cfg := config.Load()
-	cfg.CORSAllowedOrigins = []string{"http://localhost:3000"}
-	allowed := map[string]struct{}{"http://localhost:3000": {}}
+	allowed := map[string]struct{}{NormaliseOrigin("http://localhost:3000"): {}}
 
 	if !originAllowed("http://localhost:5173", allowed, true) {
 		t.Error("any loopback port should be allowed in development")

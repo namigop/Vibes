@@ -335,11 +335,20 @@ figcaption { font-size: .84rem; color: var(--muted); margin-top: .5rem; }
 ├── <span class="f">docker-compose.yml</span>       <span class="c">← postgres + api + web, all at once</span>
 ├── <span class="f">.env.example</span>             <span class="c">← template for the backend's environment</span>
 ├── <span class="f">backend/</span>                 <span class="c">Go 1.27, net/http, pgx/v5, sqlc-generated store</span>
-│   ├── <span class="f">cmd/server/main.go</span>      <span class="c">the only entrypoint</span>
-│   ├── <span class="f">internal/api/</span>          <span class="c">HTTP: router, middleware, DTOs, handlers, business rules</span>
-│   ├── <span class="f">internal/config/</span>       <span class="c">environment variables with defaults</span>
-│   ├── <span class="f">internal/store/</span>        <span class="c">generated SQL + connection pool + demo seed</span>
-│   ├── <span class="f">migrations/</span>            <span class="c">embedded .sql, applied at boot</span>
+│   ├── <span class="f">cmd/server/main.go</span>      <span class="c">the only entrypoint — the composition root</span>
+│   ├── <span class="f">internal/platform/</span>     <span class="c">infrastructure, zero business rules</span>
+│   │   ├── <span class="f">config/</span>              <span class="c">environment variables with defaults + production guard</span>
+│   │   ├── <span class="f">auth/</span>                <span class="c">bcrypt, JWT HS256, bearer middleware</span>
+│   │   ├── <span class="f">database/</span>            <span class="c">pool + UnitOfWork; migrations/ embedded and applied at boot</span>
+│   │   └── <span class="f">httpserver/</span>          <span class="c">router (Public/Private), CORS, JSON error envelope</span>
+│   ├── <span class="f">internal/domain/</span>        <span class="c">entities, errors, validation + ordering invariants</span>
+│   ├── <span class="f">internal/features/</span>      <span class="c">vertical slices — one folder per resource</span>
+│   │   ├── <span class="f">auth/</span>                <span class="c">  login, me</span>
+│   │   ├── <span class="f">boards/</span>              <span class="c">  list, get, create, rename, delete</span>
+│   │   ├── <span class="f">columns/</span>             <span class="c">  create, rename, move, delete</span>
+│   │   └── <span class="f">cards/</span>               <span class="c">  create, update, move, delete</span>
+│   ├── <span class="f">internal/store/</span>        <span class="c">sqlc-generated SQL (horizontal on purpose — keeps WithTx)</span>
+│   ├── <span class="f">internal/devseed/</span>       <span class="c">demo personas and sample boards</span>
 │   ├── <span class="f">sql/</span>                    <span class="c">schema.sql + queries.sql ← sqlc source of truth</span>
 │   └── <span class="f">test/smoke.ps1</span>          <span class="c">end-to-end HTTP test against a live server</span>
 └── <span class="f">frontend/</span>                <span class="c">Next.js 16 App Router, React 19, Tailwind v4, dnd-kit</span>
@@ -632,8 +641,8 @@ commit  →  returns { …"one", "column_id": review, "position": 1 }</code></pr
 <h3 id="p3-5">Changing the contract</h3>
 <ol class="steps">
   <li><strong>Edit <code>docs/API.md</code> first.</strong> If the document and the code disagree, the code is wrong.</li>
-  <li><strong>Backend DTOs</strong> — <code>backend/internal/api/dto.go</code>. The JSON tags are the contract; the field names are Go-idiomatic behind them.</li>
-  <li><strong>Backend service</strong> — <code>service.go</code> if validation or defaults changed.</li>
+  <li><strong>Backend DTOs</strong> — in the owning slice, e.g. <code>backend/internal/features/cards/cards.go</code>. The JSON tags are the contract; the field names are Go-idiomatic behind them.</li>
+  <li><strong>Backend validation and mapping</strong> — <code>domain/validation.go</code> and <code>domain/mapping.go</code> if validation or defaults changed.</li>
   <li><strong>Frontend types</strong> — <code>frontend/src/lib/types.ts</code>.</li>
   <li><strong>Frontend normaliser</strong> — <code>frontend/src/lib/api.ts</code>, <code>normaliseCard</code>, if the new field can be null.</li>
   <li><strong>Run both checks</strong> — <code>make test</code> and <code>cd frontend &amp;&amp; npm run build &amp;&amp; npm run lint</code>.</li>
@@ -645,62 +654,87 @@ commit  →  returns { …"one", "column_id": review, "position": 1 }</code></pr
 
 <h3 id="p4-1">Package map</h3>
 <p>
-  The Go side is four small packages plus one entrypoint. There are exactly <strong>two</strong>
-  direct dependencies (<code>pgx/v5</code> and <code>google/uuid</code>) — no web framework, no
-  ORM, no router library. Go 1.22+ ships a pattern-matching HTTP router in the standard
-  library, so <code>mux.HandleFunc("GET /api/v1/boards/{boardId}", …)</code> already does
-  method matching, path wildcards and 405s.
+  The Go side is a <strong>vertical slice</strong> layout: each folder under <code>internal/features/</code>
+  holds every file needed to change one capability — its route, its request decoding, its
+  validation, its queries and its response mapping. Add <code>ExportBoard</code> and you create
+  <code>features/boards/export.go</code> and register it. No other file needs to learn the feature
+  exists. There are exactly <strong>two</strong> direct dependencies (<code>pgx/v5</code> and
+  <code>google/uuid</code>) — no web framework, no ORM, no router library. Go 1.22+ ships a
+  pattern-matching HTTP router in the standard library, so
+  <code>mux.HandleFunc("GET /api/v1/boards/{boardId}", …)</code> already does method matching,
+  path wildcards and 405s.
 </p>
 <figure>
-<svg class="diagram" viewBox="0 0 860 260" role="img" aria-labelledby="pkg-t pkg-d">
+<svg class="diagram" viewBox="0 0 880 320" role="img" aria-labelledby="pkg-t pkg-d">
   <title id="pkg-t">Backend package dependencies</title>
-  <desc id="pkg-d">cmd/server depends on api, config, store and migrations. api depends on store and config. store depends only on pgx. Arrows point from importer to imported, and never back up.</desc>
+  <desc id="pkg-d">cmd/server depends on features, platform, devseed and migrations. Feature slices depend on domain, store and platform. Domain and platform/database depend on store. Nothing depends on features. Arrows point from importer to imported, and never back up.</desc>
   <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>
 
-  <rect class="accentbox" x="330" y="24" width="200" height="48" rx="10"/>
-  <text x="430" y="46" text-anchor="middle" font-size="14" font-weight="700">cmd/server</text>
-  <text class="sub" x="430" y="63" text-anchor="middle">main.go — the entrypoint</text>
+  <rect class="accentbox" x="340" y="20" width="200" height="48" rx="10"/>
+  <text x="440" y="42" text-anchor="middle" font-size="14" font-weight="700">cmd/server</text>
+  <text class="sub" x="440" y="59" text-anchor="middle">main.go — the composition root</text>
 
-  <rect class="box" x="60" y="128" width="200" height="52" rx="10"/>
-  <text x="160" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/api</text>
-  <text class="sub" x="160" y="167" text-anchor="middle">router · dto · handlers · service</text>
+  <rect class="box" x="40" y="128" width="230" height="60" rx="10"/>
+  <text x="155" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/features/*</text>
+  <text class="sub" x="155" y="167" text-anchor="middle">auth · boards · columns · cards</text>
+  <text class="sub" x="155" y="181" text-anchor="middle">one slice per operation</text>
 
-  <rect class="box" x="300" y="128" width="180" height="52" rx="10"/>
-  <text x="390" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/config</text>
-  <text class="sub" x="390" y="167" text-anchor="middle">env vars + defaults</text>
+  <rect class="box" x="300" y="128" width="180" height="60" rx="10"/>
+  <text x="390" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/domain</text>
+  <text class="sub" x="390" y="167" text-anchor="middle">entities · errors</text>
+  <text class="sub" x="390" y="181" text-anchor="middle">validation · ordering</text>
 
-  <rect class="box" x="520" y="128" width="180" height="52" rx="10"/>
-  <text x="610" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/store</text>
-  <text class="sub" x="610" y="167" text-anchor="middle">sqlc · pgxpool · seed</text>
+  <rect class="box" x="510" y="128" width="180" height="60" rx="10"/>
+  <text x="600" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/platform/*</text>
+  <text class="sub" x="600" y="167" text-anchor="middle">config · auth · httpserver</text>
+  <text class="sub" x="600" y="181" text-anchor="middle">database (+ migrations)</text>
 
-  <rect class="box" x="740" y="128" width="100" height="52" rx="10"/>
-  <text x="790" y="150" text-anchor="middle" font-size="14" font-weight="700">migrations</text>
-  <text class="sub" x="790" y="167" text-anchor="middle">embedded</text>
+  <rect class="box" x="720" y="128" width="130" height="60" rx="10"/>
+  <text x="785" y="150" text-anchor="middle" font-size="14" font-weight="700">internal/store</text>
+  <text class="sub" x="785" y="167" text-anchor="middle">sqlc-generated</text>
+  <text class="sub" x="785" y="181" text-anchor="middle">pgx only</text>
 
   <g class="line" marker-end="url(#ar2)">
-    <path d="M 370 72 L 200 124"/>
-    <path d="M 430 72 L 390 124"/>
-    <path d="M 490 72 L 600 124"/>
-    <path d="M 510 76 L 760 124"/>
+    <path d="M 380 68 L 200 124"/>
+    <path d="M 430 68 L 390 124"/>
+    <path d="M 460 68 L 590 124"/>
+    <path d="M 490 72 L 760 124"/>
   </g>
   <g class="line" marker-end="url(#ar2)">
-    <path d="M 260 148 L 298 148"/>
-    <path d="M 520 162 L 700 162"/>
+    <path d="M 270 150 L 296 150"/>
+    <path d="M 270 165 L 506 165"/>
+    <path d="M 480 158 L 716 158"/>
+    <path d="M 480 172 L 716 172"/>
+    <path d="M 390 188 L 390 222"/>
+    <path d="M 600 188 L 600 222"/>
   </g>
-  <text class="sub" x="278" y="142" text-anchor="middle" font-size="11">uses</text>
-  <text class="sub" x="610" y="182" text-anchor="middle" font-size="11">uses</text>
+  <text class="sub" x="283" y="144" text-anchor="middle" font-size="11">uses</text>
 
-  <rect class="badbox" x="60" y="212" width="740" height="34" rx="8"/>
-  <text class="sub" x="430" y="233" text-anchor="middle">There are no backward arrows. api must never import migrations, and store must never import api.</text>
+  <rect class="box" x="300" y="226" width="180" height="40" rx="10"/>
+  <text x="390" y="243" text-anchor="middle" font-size="12" font-weight="700">domain → store</text>
+  <text class="sub" x="390" y="258" text-anchor="middle">row → entity mapping</text>
+
+  <rect class="box" x="510" y="226" width="180" height="40" rx="10"/>
+  <text x="600" y="243" text-anchor="middle" font-size="12" font-weight="700">database → store</text>
+  <text class="sub" x="600" y="258" text-anchor="middle">pool · WithTx</text>
+
+  <rect class="badbox" x="40" y="284" width="810" height="30" rx="8"/>
+  <text class="sub" x="445" y="303" text-anchor="middle">No backward arrows. Nothing imports features/; platform/ knows no Board, Column or Card.</text>
 </svg>
-<figcaption>Figure 2 — Dependency direction. It is a straight line, which is why the codebase is easy to hold in your head.</figcaption>
+<figcaption>Figure 2 — Dependency direction. Arrows point from importer to imported and never back up, so the graph stays acyclic.</figcaption>
 </figure>
 <p>
-  The only asymmetry worth remembering: <code>store</code> duplicates the list of default
-  column names (<code>demoColumns</code>) that also exists in <code>api</code>
-  (<code>DefaultColumnNames</code>). That duplication is deliberate — <code>store</code>
-  cannot import <code>api</code> because <code>api</code> imports <code>store</code>. If you
-  change one, change both.
+  Two things stay <strong>horizontal</strong> on purpose. <code>store</code> is generated by sqlc as a
+  single package; slicing it per feature would lose <code>DBTX</code> and <code>WithTx</code>, and a
+  card moved between two columns rewrites positions in both — it has to be one transaction.
+  <code>domain</code> is horizontal because a Board is returned by five board slices and touched by
+  nine column and card slices; shared vocabulary has to live somewhere.
+</p>
+<p>
+  The only duplication worth remembering: <code>devseed</code> carries its own
+  <code>demoColumns</code> that duplicates <code>domain.DefaultColumnNames</code>. That is
+  deliberate — <code>devseed</code> imports <code>store</code>, and <code>store</code> must never
+  import a feature. If you change one, change both.
 </p>
 
 <h3 id="p4-2">Boot sequence</h3>
@@ -776,13 +810,20 @@ commit  →  returns { …"one", "column_id": review, "position": 1 }</code></pr
   <li><strong><code>ServeMux</code></strong> matches method + path. A bare <code>GET /api/v1/</code> catch-all answers 404 with the standard envelope instead of the mux's plain-text message.</li>
 </ul>
 
-<h3 id="p4-4">DTO layer</h3>
+<h3 id="p4-4">DTOs live inside their slice</h3>
 <p>
-  <code>internal/api/dto.go</code> defines the wire types. They look almost identical to the
-  store's generated models, and that is on purpose — they are <em>not</em> the same thing.
+  There is no separate DTO package. Each wire type is declared in the slice that owns it —
+  <code>features/cards/cards.go</code> defines <code>Card</code> and <code>CardRequest</code>,
+  <code>features/boards/boards.go</code> defines <code>Board</code>. That is the point of the
+  layout: the JSON tags for a resource are in the same folder as the route that serves it, so a
+  contract change is a local edit.
+</p>
+<p>
+  They look almost identical to the store's generated models, and that is on purpose — they are
+  <em>not</em> the same thing.
 </p>
 <table>
-  <thead><tr><th></th><th>DTO (dto.go)</th><th>Store model (generated)</th></tr></thead>
+  <thead><tr><th></th><th>DTO (in the slice)</th><th>Store model (generated)</th></tr></thead>
   <tbody>
     <tr><td>Exists because</td><td>The contract is frozen and public</td><td>The schema is ours and may change</td></tr>
     <tr><td><code>id</code></td><td><code>string</code></td><td><code>uuid.UUID</code></td></tr>
@@ -792,24 +833,48 @@ commit  →  returns { …"one", "column_id": review, "position": 1 }</code></pr
   </tbody>
 </table>
 <p>
-  <code>mapping.go</code> converts one to the other. The date conversion lives here and is the
-  only place in the backend that knows the wire format is <code>"2006-01-02"</code>.
+  <code>domain/mapping.go</code> converts a store row into a domain entity, and each slice maps
+  that entity into its own DTO. The date conversion lives in <code>domain/validation.go</code>
+  (<code>DueDateIn</code> / <code>DueDateOut</code>) and is the only place in the backend that
+  knows the wire format is <code>"2006-01-02"</code>.
 </p>
 
-<h3 id="p4-5">The service layer</h3>
+<h3 id="p4-5">Inside a slice</h3>
 <p>
-  Handlers are deliberately dumb: read the request, call one service method, write the
-  response. All business rules live in <code>service.go</code>, which is why that file is the
-  only place worth reading to understand the domain.
+  A slice is deliberately small and shaped the same way every time. <code>features/cards/</code> has
+  a shared <code>cards.go</code> holding the DTOs and a tiny <code>fields</code> struct that
+  validates a request once, then one file per operation:
+</p>
+<pre><code>cards.go       Card + CardRequest DTOs, the fields() validator
+create.go      POST   /boards/{id}/columns/{id}/cards
+update.go      PATCH  /cards/{id}
+move.go        POST   /cards/{id}/move
+delete.go      DELETE /cards/{id}</code></pre>
+<p>
+  Every operation file follows the same five steps — this is the whole pattern, and being able to
+  predict it is what makes an unfamiliar slice cheap to read:
+</p>
+<ol class="steps">
+  <li>pull the caller's id out of the context (<code>auth.MustCaller</code>)</li>
+  <li>parse and validate the path (<code>httpserver.PathUUID</code>)</li>
+  <li>validate the body (<code>fields()</code> → <code>domain.RequireName</code> and friends)</li>
+  <li>call the store, and if it touches two rows wrap it in <code>database.UnitOfWork</code></li>
+  <li>map to a DTO and <code>httpserver.WriteJSON</code> — or <code>WriteError</code></li>
+</ol>
+<p>
+  There is no service layer. The business rules a slice needs are the three or four lines that sit
+  between decoding and the query; anything reusable across resources was pushed down into
+  <code>domain/</code> where it can be tested without a database.
 </p>
 <h4>The four ordering helpers</h4>
-<pre><code>removeID(ids, id)   → ids without id            (never mutates the input)
-insertAt(ids, idx, id) → ids with id spliced in at idx, clamped to [0, len]
-clampIndex(pos, n)     → pos clamped to [0, n]    (a stale client can't corrupt order)
-withTx(ctx, fn)        → runs fn in a transaction, rolls back on any error</code></pre>
+<p>These live in <code>domain/ordering.go</code> and are shared by both the column and card move slices:</p>
+<pre><code>domain.RemoveID(ids, id)     → ids without id            (never mutates the input)
+domain.InsertAt(ids, idx, id) → ids with id spliced in at idx, clamped to [0, len]
+domain.ClampIndex(pos, n)     → pos clamped to [0, n]      (a stale client can't corrupt order)
+database.UnitOfWork(ctx, …)   → runs fn in a transaction, rolls back on any error</code></pre>
 <p>
-  <code>MoveCard</code> composes them. Read it top to bottom — it is about forty lines and it is
-  the heart of the backend:
+  <code>features/cards/move.go</code> composes them. Read it top to bottom — it is about forty lines
+  and it is the heart of the backend:
 </p>
 <pre><code>tx:
   card := GetCard(id)                     // 404 if missing
@@ -876,8 +941,8 @@ commit</code></pre>
 
 <h3 id="p4-7">Migrations</h3>
 <p>
-  <code>backend/migrations/</code> holds numbered <code>.sql</code> files that are embedded into
-  the binary with Go's <code>//go:embed</code> and applied at boot. There is no separate
+  <code>backend/internal/platform/database/migrations/</code> holds numbered <code>.sql</code> files that are
+  embedded into the binary with Go's <code>//go:embed</code> and applied at boot. There is no separate
   migration CLI.
 </p>
 <ol>
@@ -993,7 +1058,7 @@ anything else       → 500  {"error":"internal_error"}  + slog.Error with the r
 
 <h3 id="p5-3">Add a column recipe</h3>
 <ol class="steps">
-  <li><strong>Write the migration</strong> — <code>backend/migrations/00002_add_labels.sql</code>, e.g. <code>ALTER TABLE cards ADD COLUMN labels TEXT NOT NULL DEFAULT '';</code></li>
+  <li><strong>Write the migration</strong> — <code>backend/internal/platform/database/migrations/00003_add_labels.sql</code>, e.g. <code>ALTER TABLE cards ADD COLUMN labels TEXT NOT NULL DEFAULT '';</code></li>
   <li><strong>Mirror it in <code>sql/schema.sql</code></strong> so sqlc sees it.</li>
   <li><strong>Regenerate</strong> — <code>make generate</code> (first time: <code>make install-sqlc</code>). Commit the generated files; they are part of the source.</li>
   <li><strong>Add a query</strong> to <code>sql/queries.sql</code> if you need to read or write it.</li>
@@ -1545,8 +1610,10 @@ d.toLocaleDateString();     // "Oct 15" everywhere</code></pre>
 
 <h3 id="p8-1">Go unit tests</h3>
 <p>
-  <code>backend/internal/api/service_test.go</code> — pure functions, no database, no HTTP.
-  Run with <code>make test</code> (or <code>cd backend &amp;&amp; go test ./...</code>).
+  <code>backend/internal/domain/ordering_test.go</code> and <code>validation_test.go</code> — pure
+  functions, no database, no HTTP. The CORS preflight regression lives next to the middleware it
+  protects, in <code>backend/internal/platform/httpserver/cors_test.go</code>. Run with
+  <code>make test</code> (or <code>cd backend &amp;&amp; go test ./...</code>).
 </p>
 <table>
   <thead><tr><th>Test</th><th>What it pins down</th></tr></thead>
@@ -1656,12 +1723,12 @@ time=... level=WARN msg=http method=POST path=/api/v1/cards/.../move status=404 
 <h3 id="p10-1">Add a field to a card, end to end</h3>
 <p>Say you want a <code>labels</code> text field. Eight files, in this order:</p>
 <ol class="steps">
-  <li><code><strong>backend/migrations/00002_add_labels.sql</strong></code> — <code>ALTER TABLE cards ADD COLUMN labels TEXT NOT NULL DEFAULT '';</code></li>
+  <li><code><strong>backend/internal/platform/database/migrations/00003_add_labels.sql</strong></code> — <code>ALTER TABLE cards ADD COLUMN labels TEXT NOT NULL DEFAULT '';</code></li>
   <li><code><strong>backend/sql/schema.sql</strong></code> — the same line, so sqlc sees it.</li>
   <li><code><strong>make generate</strong></code> — commit the regenerated store files.</li>
   <li><strong><code>backend/sql/queries.sql</code></strong> — add the column to the create/update/select statements you need.</li>
-  <li><strong><code>backend/internal/api/dto.go</code></strong> — add the field to <code>Card</code> and to <code>CardRequest</code>.</li>
-  <li><strong><code>backend/internal/api/mapping.go</code></strong> — copy it in <code>cardDTO</code> and normalise it in <code>validateCardFields</code>.</li>
+  <li><strong><code>backend/internal/features/cards/cards.go</code></strong> — add the field to <code>Card</code> and to <code>CardRequest</code>.</li>
+  <li><strong><code>backend/internal/domain/mapping.go</code></strong> — copy it out of the store row, and normalise it in the slice's <code>fields()</code>.</li>
   <li><strong><code>docs/API.md</code></strong> — then <code>frontend/src/lib/types.ts</code> and <code>normaliseCard</code> in <code>lib/api.ts</code>.</li>
   <li><strong>Frontend</strong> — a control in <code>card-drawer.tsx</code>, a line in <code>CardFace</code>, and the field in the optimistic draft inside <code>useBoard.updateCard</code>.</li>
 </ol>
@@ -1671,10 +1738,9 @@ time=... level=WARN msg=http method=POST path=/api/v1/cards/.../move status=404 
 <ol class="steps">
   <li><strong>Document it</strong> in <code>docs/API.md</code> first — path, body, success shape, every error it can return.</li>
   <li><strong>SQL</strong> — add a named query in <code>queries.sql</code>, regenerate.</li>
-  <li><strong>Service method</strong> in <code>service.go</code>, returning DTOs, raising <code>invalid()</code> / <code>notFound()</code>.</li>
-  <li><strong>Handler</strong> in <code>handlers.go</code>: context, decode, call, <code>writeJSON</code>. Nothing else.</li>
-  <li><strong>Route</strong> in <code>router.go</code> with the method prefix.</li>
-  <li><strong>Unit tests</strong> in <code>service_test.go</code> for every validation branch.</li>
+  <li><strong>A new file in the slice folder</strong> — e.g. <code>features/boards/export.go</code>. Five steps: caller id from context, validate the path, validate the body, query (wrapped in <code>database.UnitOfWork</code> if it touches two rows), then map and <code>WriteJSON</code>. Raise <code>domain.Invalid</code> / <code>domain.NotFound</code> and let <code>WriteError</code> choose the status code.</li>
+  <li><strong>Register the route</strong> in that slice's <code>Register</code> function, using <code>router.Private</code> unless it is genuinely public. This is the only step that touches another file, and only for the resource's own <code>Register</code>.</li>
+  <li><strong>Unit tests</strong> next to the shared helpers in <code>domain/</code> for every validation branch.</li>
   <li><strong>Smoke case</strong> in <code>test/smoke.ps1</code>.</li>
   <li><strong>Client function</strong> in <code>frontend/src/lib/api.ts</code> plus its TypeScript type.</li>
   <li><strong>Hook method</strong> in <code>use-board.ts</code> with the optimistic/rollback pattern.</li>
@@ -1687,7 +1753,7 @@ time=... level=WARN msg=http method=POST path=/api/v1/cards/.../move status=404 
   <tbody>
     <tr><td>Go comments</td><td>Explain <em>why</em>, not what. A comment restating the line below it is noise; a comment explaining a non-obvious decision is the most valuable code in the file.</td></tr>
     <tr><td>Error handling</td><td>Never leak internals to the client. Log the cause, return the envelope.</td></tr>
-    <tr><td>Transactions</td><td>Anything that touches two rows in service of one user action goes in <code>withTx</code>.</td></tr>
+    <tr><td>Transactions</td><td>Anything that touches two rows in service of one user action goes in <code>database.UnitOfWork</code>.</td></tr>
     <tr><td>SQL</td><td>Never edit <code>internal/store/queries.sql.go</code> or <code>models.go</code> by hand — they are generated.</td></tr>
     <tr><td>TypeScript</td><td>Strict mode, no <code>any</code> without a comment justifying it, no unused variables (they fail the build).</td></tr>
     <tr><td>Components</td><td>Small and presentational. Data and callbacks arrive as props; components never call <code>fetch</code>.</td></tr>
@@ -1723,7 +1789,7 @@ npm run parity       # client ordering vs. live API</code></pre>
   <thead><tr><th>When</th><th>Read</th></tr></thead>
   <tbody>
     <tr><td>Day one</td><td><code>docs/API.md</code>, this document</td></tr>
-    <tr><td>First backend change</td><td><code>backend/internal/api/service.go</code>, then <code>router.go</code></td></tr>
+    <tr><td>First backend change</td><td>The matching folder under <code>backend/internal/features/</code> — start at its <code>Register</code> to see every route it owns</td></tr>
     <tr><td>First frontend change</td><td><code>frontend/src/hooks/use-board.ts</code>, then <code>lib/board-state.ts</code></td></tr>
     <tr><td>Touching drag and drop</td><td><code>components/board/board-view.tsx</code> and <code>board-column.tsx</code></td></tr>
     <tr><td>Something looks wrong</td><td>The runbook in Part 9, before any code</td></tr>

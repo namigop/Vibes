@@ -57,7 +57,7 @@ vet: ## Run go vet
 
 .PHONY: fmt
 fmt: ## Format Go sources
-	cd $(BACKEND) && gofmt -w ./cmd ./internal ./migrations
+	cd $(BACKEND) && gofmt -w ./cmd ./internal
 
 .PHONY: api
 api: ## Run the API in the foreground

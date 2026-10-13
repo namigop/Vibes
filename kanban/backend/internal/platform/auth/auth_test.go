@@ -196,7 +196,9 @@ func TestRequireAuth(t *testing.T) {
 			var gotUser string
 
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				gotUser, _ = UserIDFrom(r.Context())
+				if caller, ok := CallerFrom(r.Context()); ok {
+					gotUser = caller.String()
+				}
 				w.WriteHeader(http.StatusOK)
 			})
 

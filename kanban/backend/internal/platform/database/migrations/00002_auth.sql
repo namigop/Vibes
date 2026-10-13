@@ -1,8 +1,9 @@
 -- Authentication and per-user board ownership.
 --
--- Applied by the built-in migration runner (backend/migrations/migrate.go),
--- which records this filename in schema_migrations. Each file runs inside one
--- transaction, so a failure here leaves the database on the last good version.
+-- Applied by the built-in migration runner
+-- (backend/internal/platform/database/migrations/migrate.go), which records this
+-- filename in schema_migrations. Each file runs inside one transaction, so a
+-- failure here leaves the database on the last good version.
 
 CREATE TABLE IF NOT EXISTS users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

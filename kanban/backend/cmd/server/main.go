@@ -1,4 +1,9 @@
-// Command server runs the kanban HTTP API.
+// Command server is the composition root.
+//
+// Its only job is to assemble the application: read config, open the database,
+// apply migrations, seed demo data if enabled, register every feature slice, and
+// listen. There is no business logic here — that belongs to internal/features,
+// one slice per operation.
 package main
 
 import (
@@ -11,11 +16,19 @@ import (
 	"syscall"
 	"time"
 
-	"kanban/internal/api"
-	"kanban/internal/auth"
-	"kanban/internal/config"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"kanban/internal/devseed"
+	"kanban/internal/features/auth"
+	"kanban/internal/features/boards"
+	"kanban/internal/features/cards"
+	"kanban/internal/features/columns"
+	platformauth "kanban/internal/platform/auth"
+	"kanban/internal/platform/config"
+	"kanban/internal/platform/database"
+	"kanban/internal/platform/database/migrations"
+	"kanban/internal/platform/httpserver"
 	"kanban/internal/store"
-	"kanban/migrations"
 )
 
 const (
@@ -48,7 +61,7 @@ func run() error {
 			"anyone can mint tokens for any user. Set JWT_SECRET before exposing this.")
 	}
 
-	signer := auth.NewSigner(cfg.JWTSecret, cfg.JWTTTL)
+	signer := platformauth.NewSigner(cfg.JWTSecret, cfg.JWTTTL)
 
 	slog.Info("starting kanban api",
 		"addr", cfg.Addr(),
@@ -58,12 +71,12 @@ func run() error {
 		"token_ttl", cfg.JWTTTL,
 	)
 
-	// bootCtx is cancelled by Ctrl-C; everything before the server starts
-	// uses it so a shutdown during startup unwinds cleanly.
+	// bootCtx is cancelled by Ctrl-C; everything before the server starts uses
+	// it so a shutdown during startup unwinds cleanly.
 	bootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := store.Open(bootCtx, cfg.DatabaseURL)
+	pool, err := database.Open(bootCtx, cfg.DatabaseURL)
 	if err != nil {
 		return err
 	}
@@ -76,27 +89,14 @@ func run() error {
 	slog.Info("migrations up to date")
 
 	if cfg.SeedDemo {
-		// Include the legacy account so its password tracks DEMO_PASSWORD too;
-		// it owns boards that predate ownership and gets no demo content.
-		personas := append(append([]string{}, config.DemoPersonas...), config.LegacyUsername)
-
-		seeded, err := store.SeedDemoData(bootCtx, pool, personas, cfg.DemoPassword)
-		if err != nil {
+		if err := seedDemo(bootCtx, pool, cfg); err != nil {
 			return err
-		}
-		if len(seeded.CreatedPersonas) == 0 {
-			slog.Info("demo accounts already present, nothing seeded")
-		} else {
-			slog.Info("seeded demo accounts",
-				"personas", seeded.CreatedPersonas,
-				"boards", seeded.CreatedBoards)
 		}
 	}
 
-	svc := api.NewService(pool, signer)
 	srv := &http.Server{
 		Addr:              cfg.Addr(),
-		Handler:           api.NewRouter(svc, cfg),
+		Handler:           buildHandler(cfg, pool, signer),
 		ReadHeaderTimeout: readTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
@@ -127,6 +127,44 @@ func run() error {
 		return err
 	}
 	slog.Info("stopped cleanly")
+	return nil
+}
+
+// buildHandler assembles the router from the feature slices.
+//
+// This list is the whole application surface in one place: adding a feature
+// means adding a package under internal/features and one line here. Nothing
+// else in the codebase needs to know it exists.
+func buildHandler(cfg config.Config, pool *pgxpool.Pool, signer *platformauth.Signer) http.Handler {
+	queries := store.New(pool)
+	router := httpserver.New(cfg, signer)
+
+	auth.Register(router, queries, pool, signer)
+	boards.Register(router, queries)
+	columns.Register(router, queries, pool)
+	cards.Register(router, queries, pool)
+
+	return router.Handler()
+}
+
+// seedDemo provisions demo accounts, including `legacy` so its password tracks
+// DEMO_PASSWORD too. legacy owns boards that predate ownership and is given no
+// demo content — it is the archive account, not a persona.
+func seedDemo(ctx context.Context, pool *pgxpool.Pool, cfg config.Config) error {
+	personas := append(append([]string{}, config.DemoPersonas...), config.LegacyUsername)
+
+	seeded, err := devseed.Run(ctx, pool, personas, cfg.DemoPassword)
+	if err != nil {
+		return err
+	}
+
+	if len(seeded.CreatedPersonas) == 0 {
+		slog.Info("demo accounts already present, nothing seeded")
+	} else {
+		slog.Info("seeded demo accounts",
+			"personas", seeded.CreatedPersonas,
+			"boards", seeded.CreatedBoards)
+	}
 	return nil
 }
 

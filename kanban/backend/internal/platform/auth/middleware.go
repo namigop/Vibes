@@ -4,30 +4,32 @@ import (
 	"context"
 	"net/http"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type contextKey string
 
-const userIDKey contextKey = "kanban.userID"
+const callerKey contextKey = "kanban.caller"
 
-// UserIDFrom returns the authenticated user's id, and whether one was present.
-// Every protected handler depends on this being true, so the boolean is part of
-// the signature rather than assumed.
-func UserIDFrom(ctx context.Context) (string, bool) {
-	id, ok := ctx.Value(userIDKey).(string)
+// CallerFrom returns the authenticated user id and whether one was present.
+//
+// Slices depend on this being present, so the boolean is part of the signature
+// rather than assumed.
+func CallerFrom(ctx context.Context) (uuid.UUID, bool) {
+	id, ok := ctx.Value(callerKey).(uuid.UUID)
 	return id, ok
 }
 
-// MustUserID is for handlers that are only ever mounted behind RequireAuth,
-// where a missing id would be a wiring bug rather than a client error.
-func MustUserID(ctx context.Context) string {
-	id, _ := UserIDFrom(ctx)
+// MustCaller is for code that only runs behind RequireAuth, where a missing
+// caller would be a wiring bug rather than a client error.
+func MustCaller(ctx context.Context) uuid.UUID {
+	id, _ := CallerFrom(ctx)
 	return id
 }
 
-// withUserID stores the authenticated id on the request context.
-func withUserID(ctx context.Context, userID string) context.Context {
-	return context.WithValue(ctx, userIDKey, userID)
+func withCaller(ctx context.Context, id uuid.UUID) context.Context {
+	return context.WithValue(ctx, callerKey, id)
 }
 
 // BearerFrom extracts the credential from an Authorization header.
@@ -45,8 +47,7 @@ func BearerFrom(r *http.Request) string {
 		return ""
 	}
 
-	credential = strings.TrimSpace(credential)
-	return credential
+	return strings.TrimSpace(credential)
 }
 
 // RequireAuth rejects any request without a valid bearer token.
@@ -70,7 +71,7 @@ func RequireAuth(signer *Signer, onUnauthorized http.HandlerFunc) func(http.Hand
 				return
 			}
 
-			next.ServeHTTP(w, r.WithContext(withUserID(r.Context(), userID.String())))
+			next.ServeHTTP(w, r.WithContext(withCaller(r.Context(), userID)))
 		})
 	}
 }

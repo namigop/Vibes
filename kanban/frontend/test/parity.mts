@@ -8,8 +8,24 @@
 
 import { createBoardState, moveCardInState } from "../src/lib/board-state.ts";
 
-const API = process.env.KANBAN_API ?? "http://localhost:8081/api/v1";
+const API = process.env.KANBAN_API ?? "http://localhost:8080/api/v1";
 let failures = 0;
+
+// Every route except /health and /auth/login needs a bearer token, so sign in
+// first and let api() attach it to everything after.
+const login = await fetch(`${API}/auth/login`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    username: process.env.KANBAN_USER ?? "demo",
+    password: process.env.KANBAN_PASSWORD ?? "kanban-demo",
+  }),
+});
+if (!login.ok) {
+  console.error(`login failed: ${login.status} ${await login.text()}`);
+  process.exit(1);
+}
+const token = (await login.json()).token;
 
 function check(name, cond, detail = "") {
   if (cond) {
@@ -20,10 +36,23 @@ function check(name, cond, detail = "") {
   }
 }
 
-async function api(path, init) {
-  const res = await fetch(`${API}${path}`, init);
+async function api(path, init = {}) {
+  const res = await fetch(`${API}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...(init.headers ?? {}),
+    },
+  });
   if (res.status === 204) return null;
-  return res.json();
+  const body = await res.json();
+  // Fail loudly rather than letting an error envelope masquerade as a board:
+  // `detail.columns` being undefined is otherwise a confusing TypeError.
+  if (!res.ok) {
+    throw new Error(`${init.method ?? "GET"} ${path} -> ${res.status} ${JSON.stringify(body)}`);
+  }
+  return body;
 }
 
 // A scratch board so the seeded boards are untouched.

@@ -1,18 +1,11 @@
-package store
+package devseed
 
 import (
-	"errors"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 )
-
-// isNoRows reports whether err is pgx's "no rows in result set".
-func isNoRows(err error) bool {
-	return errors.Is(err, pgx.ErrNoRows)
-}
 
 // hashPassword wraps bcrypt so seed.go does not import it directly.
 func hashPassword(plain string) (string, error) {

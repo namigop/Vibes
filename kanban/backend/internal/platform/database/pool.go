@@ -1,4 +1,6 @@
-package store
+// Package database holds connection-pool concerns and the transaction helper
+// shared by feature slices.
+package database
 
 import (
 	"context"

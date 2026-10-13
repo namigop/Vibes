@@ -1,4 +1,9 @@
-package store
+// Package devseed provisions the demo accounts and their sample boards.
+//
+// It is a development fixture, not a feature: it exists so a fresh checkout
+// has something to look at. Nothing under internal/features imports it, and
+// the server skips it entirely when SEED_DEMO is off.
+package devseed
 
 import (
 	"context"
@@ -7,11 +12,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"kanban/internal/platform/database"
+	"kanban/internal/store"
 )
 
 // demoColumns mirrors the default workflow stages a new board gets. It is
-// duplicated from the api package on purpose: store must not import api,
-// because api imports store.
+// duplicated from the domain package on purpose: domain must not import store,
+// because devseed imports store.
 var demoColumns = []string{"To Do", "In Progress", "Review", "Done"}
 
 // demoCards is the sample content each persona receives, so logging in as a
@@ -70,7 +78,7 @@ type SeedResult struct {
 	CreatedBoards   int
 }
 
-// SeedDemoData provisions the demo accounts and gives each one sample boards.
+// Run provisions the demo accounts and gives each one sample boards.
 //
 // The emptiness check is what makes this safe to run on every boot: accounts
 // and boards are only created when the database has none, so it never touches
@@ -79,7 +87,7 @@ type SeedResult struct {
 // `legacy` is handled specially. It is created by migration 00002 and owns any
 // boards that predate ownership, so it is never given demo content — it is the
 // archive account, not a persona.
-func SeedDemoData(
+func Run(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	personas []string,
@@ -87,7 +95,7 @@ func SeedDemoData(
 ) (SeedResult, error) {
 	var result SeedResult
 
-	q := New(pool)
+	q := store.New(pool)
 
 	userCount, err := q.CountUsers(ctx)
 	if err != nil {
@@ -107,18 +115,18 @@ func SeedDemoData(
 			// The account already exists (typically `legacy`, or a previous
 			// seed). Keep the stored hash but refresh it from the current
 			// DEMO_PASSWORD so changing the env var still takes effect.
-			if err := q.UpdateUserPassword(ctx, UpdateUserPasswordParams{
+			if err := q.UpdateUserPassword(ctx, store.UpdateUserPasswordParams{
 				ID: existing.ID, PasswordHash: hash,
 			}); err != nil {
 				return result, fmt.Errorf("seed: refresh password for %q: %w", username, err)
 			}
 			continue
 		}
-		if !isNoRows(err) {
+		if !database.IsNotFound(err) {
 			return result, fmt.Errorf("seed: look up %q: %w", username, err)
 		}
 
-		user, err := q.UpsertPersona(ctx, UpsertPersonaParams{
+		user, err := q.UpsertPersona(ctx, store.UpsertPersonaParams{
 			Username: username, PasswordHash: hash,
 		})
 		if err != nil {
@@ -155,16 +163,16 @@ func seedBoardsFor(ctx context.Context, pool *pgxpool.Pool, owner uuid.UUID, nam
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	tq := New(pool).WithTx(tx)
+	tq := store.New(pool).WithTx(tx)
 
-	board, err := tq.CreateBoard(ctx, CreateBoardParams{Name: name, OwnerID: owner})
+	board, err := tq.CreateBoard(ctx, store.CreateBoardParams{Name: name, OwnerID: owner})
 	if err != nil {
 		return 0, err
 	}
 
 	cols := make(map[string]uuid.UUID, len(demoColumns))
 	for _, stage := range demoColumns {
-		col, err := tq.CreateColumn(ctx, CreateColumnParams{BoardID: board.ID, Name: stage})
+		col, err := tq.CreateColumn(ctx, store.CreateColumnParams{BoardID: board.ID, Name: stage})
 		if err != nil {
 			return 0, err
 		}
@@ -178,7 +186,7 @@ func seedBoardsFor(ctx context.Context, pool *pgxpool.Pool, owner uuid.UUID, nam
 	for _, c := range demoCards {
 		desc := c.desc
 		assignee := c.assignee
-		_, err := tq.CreateCard(ctx, CreateCardParams{
+		_, err := tq.CreateCard(ctx, store.CreateCardParams{
 			ColumnID:    cols[c.column],
 			Title:       c.title,
 			Description: &desc,
@@ -193,7 +201,7 @@ func seedBoardsFor(ctx context.Context, pool *pgxpool.Pool, owner uuid.UUID, nam
 
 	// A second, empty board shows the empty state without deleting the sample
 	// content above.
-	if _, err := tq.CreateBoard(ctx, CreateBoardParams{
+	if _, err := tq.CreateBoard(ctx, store.CreateBoardParams{
 		Name:    name + " (empty)",
 		OwnerID: owner,
 	}); err != nil {

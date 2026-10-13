@@ -50,11 +50,21 @@ See [docs/API.md](docs/API.md) for the authentication contract.
 ```
 kanban/
 ├── backend/
-│   ├── cmd/server/            # entrypoint: config -> pool -> migrate -> serve
+│   ├── cmd/server/            # composition root: config -> pool -> migrate -> register slices -> serve
 │   ├── internal/
-│   │   ├── api/               # HTTP handlers, DTOs, service layer, router, CORS
-│   │   └── store/             # sqlc-generated queries + pool + demo seed
-│   ├── migrations/            # embedded, applied at boot
+│   │   ├── platform/          # infrastructure, no business rules
+│   │   │   ├── config/        # environment variables with defaults + production guard
+│   │   │   ├── auth/          # bcrypt, JWT HS256, bearer middleware
+│   │   │   ├── database/      # pool + UnitOfWork; migrations/ embedded and applied at boot
+│   │   │   └── httpserver/    # router (Public/Private), CORS, JSON error envelope, decode
+│   │   ├── domain/            # entities, errors, validation and ordering invariants
+│   │   ├── features/          # vertical slices, one folder per resource
+│   │   │   ├── auth/          #   login, me
+│   │   │   ├── boards/        #   list, get, create, rename, delete
+│   │   │   ├── columns/       #   create, rename, move, delete
+│   │   │   └── cards/         #   create, update, move, delete
+│   │   ├── store/             # sqlc-generated (horizontal on purpose — see below)
+│   │   └── devseed/           # demo personas and sample boards
 │   ├── sql/                   # schema.sql + queries.sql (sqlc source of truth)
 │   ├── test/smoke.ps1         # end-to-end API test against a running server
 │   └── sqlc.yaml
@@ -62,6 +72,24 @@ kanban/
 ├── docs/API.md                # the frozen REST contract
 └── docker-compose.yml
 ```
+
+The backend is organised as **vertical slices**: each folder under `features/`
+holds every file needed to change one capability — its route, its request
+decoding, its validation, its queries and its response mapping. Adding
+`ExportBoard` means creating `features/boards/export.go` and registering it;
+no other package needs to learn that the feature exists.
+
+Two things deliberately stay horizontal:
+
+- **`store/`** — sqlc emits one package, and keeping it whole preserves
+  `DBTX` and `WithTx`. Slicing it per feature would make a cross-column card
+  move impossible to express in one transaction.
+- **`domain/`** — a Board is returned by five board slices and touched by nine
+  column and card slices. Shared vocabulary has to live somewhere.
+
+`platform/` holds the infrastructure the slices need — config, auth, the
+database, and the HTTP plumbing. Nothing in `platform/` may mention Board,
+Column or Card; if it does, that logic belongs in a slice.
 
 `docs/API.md` is the contract shared by both halves of the app. Change a shape
 there and you change both sides.

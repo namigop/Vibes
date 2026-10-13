@@ -1,11 +1,12 @@
 -- Kanban board schema.
 -- Source of truth for sqlc code generation (see backend/sqlc.yaml).
--- The identical DDL is applied at runtime from backend/migrations/00001_init.sql.
+-- The identical DDL is applied at runtime from
+-- backend/internal/platform/database/migrations/00001_init.sql.
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- An account. There is no signup route: accounts are provisioned by the seed
--- (see backend/internal/store/seed.go) so the app ships with a fixed set of
+-- (see backend/internal/devseed/seed.go) so the app ships with a fixed set of
 -- demo personas.
 CREATE TABLE users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

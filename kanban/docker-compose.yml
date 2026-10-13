@@ -4,8 +4,9 @@ services:
     container_name: kanban-postgres
     restart: unless-stopped
     environment:
-      # These match backend/internal/config/config.go's defaultDatabaseURL and
-      # the credentials the existing `pgdata` volume was initialised with.
+      # These match backend/internal/platform/config/config.go's
+      # defaultDatabaseURL and the credentials the existing `pgdata` volume was
+      # initialised with.
       # Changing them here does NOT change an existing volume — Postgres only
       # reads them on first init. Use `docker compose down -v` to reset.
       POSTGRES_USER: ${POSTGRES_USER:-kanban}
@@ -34,16 +35,17 @@ services:
         condition: service_healthy
     environment:
       # This is the DSN the backend uses *inside* the compose network. It must
-      # match backend/internal/config/config.go's defaultDatabaseURL so that
-      # leaving DATABASE_URL unset still connects.
+      # match backend/internal/platform/config/config.go's defaultDatabaseURL so
+      # that leaving DATABASE_URL unset still connects.
       DATABASE_URL: postgres://${POSTGRES_USER:-kanban}:${POSTGRES_PASSWORD:-kanban}@postgres:5432/${POSTGRES_DB:-kanban}?sslmode=disable
       BACKEND_PORT: 8080
       APP_ENV: development
       SEED_DEMO: "true"
-      # Development values. See internal/config/config.go: the server refuses to
-      # boot with APP_ENV=production while SEED_DEMO is on, while JWT_SECRET is
-      # the default, or while DEMO_PASSWORD is the default — because there is no
-      # signup flow and every account would share one published password.
+      # Development values. See internal/platform/config/config.go: the server
+      # refuses to boot with APP_ENV=production while SEED_DEMO is on, while
+      # JWT_SECRET is the default, or while DEMO_PASSWORD is the default —
+      # because there is no signup flow and every account would share one
+      # published password.
       JWT_SECRET: ${JWT_SECRET:-dev-only-insecure-jwt-secret-change-me}
       JWT_TTL: ${JWT_TTL:-24h}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-kanban-demo}

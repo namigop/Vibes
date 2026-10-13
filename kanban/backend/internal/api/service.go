@@ -9,24 +9,33 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"kanban/internal/auth"
 	"kanban/internal/store"
 )
 
 // Service holds the business rules that sit between HTTP and SQL.
 //
-// The interesting one is ordering: `position` is a gap-free ordinal, and any
-// move reindexes both the source and the destination in a single transaction.
-// That makes ordering impossible to corrupt with a stale client, and avoids
-// the drift that fractional "insert between 3 and 7" schemes accumulate.
+// The ordering rule: `position` is a gap-free ordinal, and any move reindexes
+// both the source and the destination in a single transaction. That makes
+// ordering impossible to corrupt with a stale client, and avoids the drift that
+// fractional "insert between 3 and 7" schemes accumulate.
+//
+// The access rule: every board-scoped call takes the caller's user id and
+// passes it into the query. There is no code path that reads a board without
+// also constraining it to its owner.
 type Service struct {
-	q    *store.Queries
-	pool *pgxpool.Pool
+	q      *store.Queries
+	pool   *pgxpool.Pool
+	signer *auth.Signer
 }
 
-// NewService wires a service to its store and connection pool.
-func NewService(pool *pgxpool.Pool) *Service {
-	return &Service{q: store.New(pool), pool: pool}
+// NewService wires a service to its store, pool and token signer.
+func NewService(pool *pgxpool.Pool, signer *auth.Signer) *Service {
+	return &Service{q: store.New(pool), pool: pool, signer: signer}
 }
+
+// Signer exposes the token signer so the router can build auth middleware.
+func (s *Service) Signer() *auth.Signer { return s.signer }
 
 // DefaultColumnNames are the workflow stages every new board starts with.
 var DefaultColumnNames = []string{"To Do", "In Progress", "Review", "Done"}
@@ -40,11 +49,76 @@ var validPriorities = map[string]struct{}{
 
 const defaultPriority = "medium"
 
+// ---- auth -----------------------------------------------------------------
+
+// Authenticate verifies credentials and issues a token.
+//
+// An unknown username and a wrong password both return auth.ErrInvalidCredentials
+// and are answered identically. Distinguishing them would let an attacker
+// enumerate which accounts exist.
+func (s *Service) Authenticate(ctx context.Context, username, password string) (LoginResponse, error) {
+	username = strings.TrimSpace(username)
+	if username == "" || password == "" {
+		return LoginResponse{}, ValidationError{Message: "username and password are required"}
+	}
+
+	user, err := s.q.GetUserByUsername(ctx, username)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Still run a hash comparison so the response time does not reveal
+			// whether the account exists.
+			auth.CheckPassword(dummyHash, password)
+			return LoginResponse{}, auth.ErrInvalidCredentials
+		}
+		return LoginResponse{}, err
+	}
+
+	if !auth.CheckPassword(user.PasswordHash, password) {
+		return LoginResponse{}, auth.ErrInvalidCredentials
+	}
+
+	token, expiresAt, err := s.signer.Issue(user.ID, nowUTC())
+	if err != nil {
+		return LoginResponse{}, err
+	}
+
+	return LoginResponse{
+		Token:     token,
+		TokenType: "Bearer",
+		ExpiresAt: expiresAt,
+		User:      userDTO(user),
+	}, nil
+}
+
+// CurrentUser returns the account behind an authenticated request.
+func (s *Service) CurrentUser(ctx context.Context) (User, error) {
+	raw, ok := auth.UserIDFrom(ctx)
+	if !ok {
+		return User{}, auth.ErrInvalidToken
+	}
+
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return User{}, auth.ErrInvalidToken
+	}
+
+	user, err := s.q.GetUserByID(ctx, id)
+	if err != nil {
+		return User{}, mapNotFound(err, "user")
+	}
+	return userDTO(user), nil
+}
+
+// dummyHash is a valid bcrypt digest of a value nobody knows. Comparing
+// against it keeps the failure path's cost similar to a real check so response
+// time does not leak whether the username exists.
+const dummyHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+
 // ---- boards ---------------------------------------------------------------
 
-// ListBoards returns every board, in sidebar order.
-func (s *Service) ListBoards(ctx context.Context) ([]Board, error) {
-	boards, err := s.q.ListBoards(ctx)
+// ListBoards returns the caller's boards, in sidebar order.
+func (s *Service) ListBoards(ctx context.Context, owner uuid.UUID) ([]Board, error) {
+	boards, err := s.q.ListBoards(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -53,17 +127,20 @@ func (s *Service) ListBoards(ctx context.Context) ([]Board, error) {
 
 // GetBoardDetail loads a whole board — the board, its columns and every card —
 // in the single request the frontend uses to hydrate a board screen.
-func (s *Service) GetBoardDetail(ctx context.Context, id uuid.UUID) (BoardDetail, error) {
-	board, err := s.q.GetBoard(ctx, id)
+//
+// Passing another user's board id yields not_found, not forbidden: a 403 would
+// confirm the board exists.
+func (s *Service) GetBoardDetail(ctx context.Context, id, owner uuid.UUID) (BoardDetail, error) {
+	board, err := s.q.GetBoard(ctx, store.GetBoardParams{ID: id, OwnerID: owner})
 	if err != nil {
 		return BoardDetail{}, mapNotFound(err, "board")
 	}
 
-	columns, err := s.q.ListColumns(ctx, id)
+	columns, err := s.q.ListColumns(ctx, store.ListColumnsParams{BoardID: id, OwnerID: owner})
 	if err != nil {
 		return BoardDetail{}, err
 	}
-	cards, err := s.q.ListCardsForBoard(ctx, id)
+	cards, err := s.q.ListCardsForBoard(ctx, store.ListCardsForBoardParams{BoardID: id, OwnerID: owner})
 	if err != nil {
 		return BoardDetail{}, err
 	}
@@ -75,14 +152,14 @@ func (s *Service) GetBoardDetail(ctx context.Context, id uuid.UUID) (BoardDetail
 	}, nil
 }
 
-// CreateBoard adds a board and seeds the four default workflow stages.
-func (s *Service) CreateBoard(ctx context.Context, rawName string) (Board, error) {
+// CreateBoard adds a board owned by the caller and seeds the four stages.
+func (s *Service) CreateBoard(ctx context.Context, owner uuid.UUID, rawName string) (Board, error) {
 	name, err := requireName(rawName, "name")
 	if err != nil {
 		return Board{}, err
 	}
 
-	board, err := s.q.CreateBoard(ctx, name)
+	board, err := s.q.CreateBoard(ctx, store.CreateBoardParams{Name: name, OwnerID: owner})
 	if err != nil {
 		return Board{}, err
 	}
@@ -101,13 +178,15 @@ func (s *Service) CreateBoard(ctx context.Context, rawName string) (Board, error
 }
 
 // RenameBoard changes a board's name.
-func (s *Service) RenameBoard(ctx context.Context, id uuid.UUID, rawName string) (Board, error) {
+func (s *Service) RenameBoard(ctx context.Context, id, owner uuid.UUID, rawName string) (Board, error) {
 	name, err := requireName(rawName, "name")
 	if err != nil {
 		return Board{}, err
 	}
 
-	board, err := s.q.UpdateBoardName(ctx, store.UpdateBoardNameParams{ID: id, Name: name})
+	board, err := s.q.UpdateBoardName(ctx, store.UpdateBoardNameParams{
+		ID: id, Name: name, OwnerID: owner,
+	})
 	if err != nil {
 		return Board{}, mapNotFound(err, "board")
 	}
@@ -115,8 +194,8 @@ func (s *Service) RenameBoard(ctx context.Context, id uuid.UUID, rawName string)
 }
 
 // DeleteBoard removes a board; its columns and cards cascade in the database.
-func (s *Service) DeleteBoard(ctx context.Context, id uuid.UUID) error {
-	affected, err := s.q.DeleteBoard(ctx, id)
+func (s *Service) DeleteBoard(ctx context.Context, id, owner uuid.UUID) error {
+	affected, err := s.q.DeleteBoard(ctx, store.DeleteBoardParams{ID: id, OwnerID: owner})
 	if err != nil {
 		return err
 	}
@@ -129,13 +208,13 @@ func (s *Service) DeleteBoard(ctx context.Context, id uuid.UUID) error {
 // ---- columns --------------------------------------------------------------
 
 // CreateColumn appends a custom column (a deal stage) to a board.
-func (s *Service) CreateColumn(ctx context.Context, boardID uuid.UUID, rawName string) (Column, error) {
+func (s *Service) CreateColumn(ctx context.Context, boardID, owner uuid.UUID, rawName string) (Column, error) {
 	name, err := requireName(rawName, "name")
 	if err != nil {
 		return Column{}, err
 	}
 
-	exists, err := s.q.BoardExists(ctx, boardID)
+	exists, err := s.q.BoardExists(ctx, store.BoardExistsParams{ID: boardID, OwnerID: owner})
 	if err != nil {
 		return Column{}, err
 	}
@@ -151,13 +230,15 @@ func (s *Service) CreateColumn(ctx context.Context, boardID uuid.UUID, rawName s
 }
 
 // RenameColumn changes a column's name.
-func (s *Service) RenameColumn(ctx context.Context, id uuid.UUID, rawName string) (Column, error) {
+func (s *Service) RenameColumn(ctx context.Context, id, owner uuid.UUID, rawName string) (Column, error) {
 	name, err := requireName(rawName, "name")
 	if err != nil {
 		return Column{}, err
 	}
 
-	col, err := s.q.UpdateColumnName(ctx, store.UpdateColumnNameParams{ID: id, Name: name})
+	col, err := s.q.UpdateColumnName(ctx, store.UpdateColumnNameParams{
+		ID: id, Name: name, OwnerID: owner,
+	})
 	if err != nil {
 		return Column{}, mapNotFound(err, "column")
 	}
@@ -167,16 +248,18 @@ func (s *Service) RenameColumn(ctx context.Context, id uuid.UUID, rawName string
 // MoveColumn reorders a column within its board and returns every column of
 // that board in the new order, so the client can replace its local state with
 // the authoritative one.
-func (s *Service) MoveColumn(ctx context.Context, id uuid.UUID, position int32) ([]Column, error) {
+func (s *Service) MoveColumn(ctx context.Context, id, owner uuid.UUID, position int32) ([]Column, error) {
 	var ordered []Column
 
 	err := s.withTx(ctx, func(q *store.Queries) error {
-		col, err := q.GetColumn(ctx, id)
+		col, err := q.GetColumn(ctx, store.GetColumnParams{ID: id, OwnerID: owner})
 		if err != nil {
 			return mapNotFound(err, "column")
 		}
 
-		ids, err := q.ListColumnIDs(ctx, col.BoardID)
+		ids, err := q.ListColumnIDs(ctx, store.ListColumnIDsParams{
+			BoardID: col.BoardID, OwnerID: owner,
+		})
 		if err != nil {
 			return err
 		}
@@ -185,15 +268,16 @@ func (s *Service) MoveColumn(ctx context.Context, id uuid.UUID, position int32) 
 
 		for i, cid := range next {
 			err := q.SetColumnOrdinal(ctx, store.SetColumnOrdinalParams{
-				ID:       cid,
-				Position: int32(i),
+				ID: cid, Position: int32(i), OwnerID: owner,
 			})
 			if err != nil {
 				return err
 			}
 		}
 
-		cols, err := q.ListColumns(ctx, col.BoardID)
+		cols, err := q.ListColumns(ctx, store.ListColumnsParams{
+			BoardID: col.BoardID, OwnerID: owner,
+		})
 		if err != nil {
 			return err
 		}
@@ -207,8 +291,8 @@ func (s *Service) MoveColumn(ctx context.Context, id uuid.UUID, position int32) 
 }
 
 // DeleteColumn removes a column and everything inside it.
-func (s *Service) DeleteColumn(ctx context.Context, id uuid.UUID) error {
-	affected, err := s.q.DeleteColumn(ctx, id)
+func (s *Service) DeleteColumn(ctx context.Context, id, owner uuid.UUID) error {
+	affected, err := s.q.DeleteColumn(ctx, store.DeleteColumnParams{ID: id, OwnerID: owner})
 	if err != nil {
 		return err
 	}
@@ -221,14 +305,14 @@ func (s *Service) DeleteColumn(ctx context.Context, id uuid.UUID) error {
 // ---- cards ----------------------------------------------------------------
 
 // CreateCard appends a card to the end of a column.
-func (s *Service) CreateCard(ctx context.Context, columnID uuid.UUID, req CardRequest) (Card, error) {
+func (s *Service) CreateCard(ctx context.Context, columnID, owner uuid.UUID, req CardRequest) (Card, error) {
 	fields, err := validateCardFields(req)
 	if err != nil {
 		return Card{}, err
 	}
 
-	// A card must hang off a real column; GetColumn gives us the 404.
-	if _, err := s.q.GetColumn(ctx, columnID); err != nil {
+	// A card must hang off a column the caller owns; GetColumn gives us the 404.
+	if _, err := s.q.GetColumn(ctx, store.GetColumnParams{ID: columnID, OwnerID: owner}); err != nil {
 		return Card{}, mapNotFound(err, "column")
 	}
 
@@ -253,7 +337,7 @@ func (s *Service) CreateCard(ctx context.Context, columnID uuid.UUID, req CardRe
 
 // UpdateCard applies a full replace of a card's editable fields. The column
 // and the ordering are not editable here — moving is its own operation.
-func (s *Service) UpdateCard(ctx context.Context, id uuid.UUID, req CardRequest) (Card, error) {
+func (s *Service) UpdateCard(ctx context.Context, id, owner uuid.UUID, req CardRequest) (Card, error) {
 	fields, err := validateCardFields(req)
 	if err != nil {
 		return Card{}, err
@@ -271,6 +355,7 @@ func (s *Service) UpdateCard(ctx context.Context, id uuid.UUID, req CardRequest)
 		Assignee:    fields.assignee,
 		Priority:    fields.priority,
 		DueDate:     due,
+		OwnerID:     owner,
 	})
 	if err != nil {
 		return Card{}, mapNotFound(err, "card")
@@ -283,16 +368,20 @@ func (s *Service) UpdateCard(ctx context.Context, id uuid.UUID, req CardRequest)
 // `position` is the index within the destination column *after* the move. The
 // reindex runs in one transaction across both columns, so a failure part way
 // through cannot leave a column with duplicate or gapped positions.
-func (s *Service) MoveCard(ctx context.Context, id uuid.UUID, columnID uuid.UUID, position int32) (Card, error) {
+func (s *Service) MoveCard(
+	ctx context.Context,
+	id, columnID, owner uuid.UUID,
+	position int32,
+) (Card, error) {
 	var moved Card
 
 	err := s.withTx(ctx, func(q *store.Queries) error {
-		card, err := q.GetCard(ctx, id)
+		card, err := q.GetCard(ctx, store.GetCardParams{ID: id, OwnerID: owner})
 		if err != nil {
 			return mapNotFound(err, "card")
 		}
 
-		if _, err := q.GetColumn(ctx, columnID); err != nil {
+		if _, err := q.GetColumn(ctx, store.GetColumnParams{ID: columnID, OwnerID: owner}); err != nil {
 			return mapNotFound(err, "column")
 		}
 
@@ -300,20 +389,26 @@ func (s *Service) MoveCard(ctx context.Context, id uuid.UUID, columnID uuid.UUID
 
 		if source == columnID {
 			// Reorder in place: the card is already in the destination list.
-			ids, err := q.ListCardIDsInColumn(ctx, columnID)
+			ids, err := q.ListCardIDsInColumn(ctx, store.ListCardIDsInColumnParams{
+				ColumnID: columnID, OwnerID: owner,
+			})
 			if err != nil {
 				return err
 			}
 			next := insertAt(removeID(ids, id), clampIndex(position, int32(len(ids)-1)), id)
-			if err := writePositions(ctx, q, next, id, columnID, false); err != nil {
+			if err := s.writePositions(ctx, q, next, id, columnID, owner, false); err != nil {
 				return err
 			}
 		} else {
-			sourceIDs, err := q.ListCardIDsInColumn(ctx, source)
+			sourceIDs, err := q.ListCardIDsInColumn(ctx, store.ListCardIDsInColumnParams{
+				ColumnID: source, OwnerID: owner,
+			})
 			if err != nil {
 				return err
 			}
-			destIDs, err := q.ListCardIDsInColumn(ctx, columnID)
+			destIDs, err := q.ListCardIDsInColumn(ctx, store.ListCardIDsInColumnParams{
+				ColumnID: columnID, OwnerID: owner,
+			})
 			if err != nil {
 				return err
 			}
@@ -321,15 +416,15 @@ func (s *Service) MoveCard(ctx context.Context, id uuid.UUID, columnID uuid.UUID
 			nextSource := removeID(sourceIDs, id)
 			nextDest := insertAt(destIDs, clampIndex(position, int32(len(destIDs))), id)
 
-			if err := writePositions(ctx, q, nextSource, id, source, false); err != nil {
+			if err := s.writePositions(ctx, q, nextSource, id, source, owner, false); err != nil {
 				return err
 			}
-			if err := writePositions(ctx, q, nextDest, id, columnID, true); err != nil {
+			if err := s.writePositions(ctx, q, nextDest, id, columnID, owner, true); err != nil {
 				return err
 			}
 		}
 
-		settled, err := q.GetCard(ctx, id)
+		settled, err := q.GetCard(ctx, store.GetCardParams{ID: id, OwnerID: owner})
 		if err != nil {
 			return err
 		}
@@ -343,8 +438,8 @@ func (s *Service) MoveCard(ctx context.Context, id uuid.UUID, columnID uuid.UUID
 }
 
 // DeleteCard removes a single card.
-func (s *Service) DeleteCard(ctx context.Context, id uuid.UUID) error {
-	affected, err := s.q.DeleteCard(ctx, id)
+func (s *Service) DeleteCard(ctx context.Context, id, owner uuid.UUID) error {
+	affected, err := s.q.DeleteCard(ctx, store.DeleteCardParams{ID: id, OwnerID: owner})
 	if err != nil {
 		return err
 	}
@@ -365,18 +460,18 @@ func (s *Service) Health(ctx context.Context) error {
 //
 // When reassign is true the card is first moved into this column, so the
 // positions it is about to receive are consistent with its new parent.
-func writePositions(
+func (s *Service) writePositions(
 	ctx context.Context,
 	q *store.Queries,
 	ids []uuid.UUID,
 	cardID uuid.UUID,
 	columnID uuid.UUID,
+	owner uuid.UUID,
 	reassign bool,
 ) error {
 	if reassign {
 		err := q.SetCardColumn(ctx, store.SetCardColumnParams{
-			ID:       cardID,
-			ColumnID: columnID,
+			ID: cardID, ColumnID: columnID, OwnerID: owner,
 		})
 		if err != nil {
 			return err
@@ -385,8 +480,7 @@ func writePositions(
 
 	for i, id := range ids {
 		err := q.SetCardPosition(ctx, store.SetCardPositionParams{
-			ID:       id,
-			Position: int32(i),
+			ID: id, Position: int32(i), OwnerID: owner,
 		})
 		if err != nil {
 			return err
@@ -459,7 +553,7 @@ func normalise(s *string) *string {
 }
 
 // mapNotFound turns a pgx "no rows" error into the right 404, leaving every
-// other error untouched.
+// other error untouched. This is also how another user's board becomes a 404.
 func mapNotFound(err error, what string) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return notFound("%s not found", what)

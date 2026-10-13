@@ -1,10 +1,11 @@
 "use client";
 
-import { Columns3, Ellipsis, Kanban, Plus, Trash, TriangleAlert, X } from "lucide-react";
+import { Columns3, Ellipsis, Kanban, LogOut, Plus, Trash, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { Avatar } from "@/components/card/assignee-avatar";
 import { NewBoardForm } from "@/components/layout/new-board-form";
 import { Button, IconButton } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -18,10 +19,12 @@ import {
 import { Skeleton } from "@/components/ui/styles";
 import { cn } from "@/lib/utils";
 import type { Board } from "@/lib/types";
+import { useAuth } from "@/providers/auth-provider";
 import { useActiveBoardId, useBoards } from "@/providers/boards-provider";
 
 export function SideNav({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { boards, status, error, reload, deleteBoard } = useBoards();
+  const { user, signOut } = useAuth();
   const activeId = useActiveBoardId();
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -173,6 +176,24 @@ export function SideNav({ open, onClose }: { open: boolean; onClose: () => void 
               })}
             </ul>
           ) : null}
+        </div>
+
+        {/* Account footer: who is signed in, and how to leave. */}
+        <div className="shrink-0 border-t border-border px-3 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <Avatar name={user?.username ?? ""} size={26} />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-medium leading-tight">
+                {user?.username ?? "Unknown"}
+              </p>
+              <p className="truncate text-[11px] leading-tight text-muted-foreground">
+                Signed in
+              </p>
+            </div>
+            <IconButton label="Sign out" onClick={signOut}>
+              <LogOut size={15} />
+            </IconButton>
+          </div>
         </div>
       </aside>
 

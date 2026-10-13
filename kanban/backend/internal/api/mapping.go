@@ -8,6 +8,9 @@ import (
 	"kanban/internal/store"
 )
 
+// nowUTC is a seam for tests that need a fixed clock.
+var nowUTC = func() time.Time { return time.Now().UTC() }
+
 // dateLayout is the wire format for cards.due_date.
 //
 // A due date is a calendar day, not an instant. It is formatted in UTC from
@@ -22,8 +25,16 @@ func boardDTO(b store.Board) Board {
 		ID:        b.ID.String(),
 		Name:      b.Name,
 		Position:  b.Position,
+		OwnerID:   b.OwnerID.String(),
 		CreatedAt: b.CreatedAt,
 		UpdatedAt: b.UpdatedAt,
+	}
+}
+
+func userDTO(u store.User) User {
+	return User{
+		ID:       u.ID.String(),
+		Username: u.Username,
 	}
 }
 

@@ -3,7 +3,8 @@
 A Kanban board app: Go + PostgreSQL on the back, Next.js + TypeScript on the
 front. Multiple boards, custom columns for deal stages, cards with priority /
 assignee / due date, drag-and-drop between columns that saves on drop, and a
-dark/light theme.
+dark/light theme. Boards are private to their owner and access requires signing
+in.
 
 ## Stack
 
@@ -12,11 +13,37 @@ dark/light theme.
 | Frontend  | Next.js 16 (App Router), React 19, TypeScript, Tailwind v4 |
 | Drag-drop | `@dnd-kit/core` + `@dnd-kit/sortable`                     |
 | Backend   | Go 1.27, `net/http` with the stdlib pattern router         |
+| Auth      | bcrypt + stateless HS256 JWT bearer tokens                |
 | Database  | PostgreSQL 16 via `pgx/v5`, `sqlc`-generated queries      |
 
 The SQL layer is generated from `backend/sql/queries.sql` by sqlc — no ORM, no
 hand-written row scanning, and a compile error whenever a query and the schema
 disagree.
+
+## Accounts
+
+There is **no sign-up**. The backend seeds demo accounts on first boot:
+
+| Username | Boards                                            |
+| -------- | ------------------------------------------------- |
+| `alice`  | Product Roadmap, Product Roadmap (empty)          |
+| `bob`    | Sales Pipeline, Sales Pipeline (empty)            |
+| `carol`  | Marketing Launch, Marketing Launch (empty)        |
+| `demo`   | Getting Started, Getting Started (empty)          |
+| `legacy` | any board that existed before ownership was added |
+
+All of them share the password **`kanban-demo`** (override with
+`DEMO_PASSWORD`). Sign in as each one to see that boards really are private to
+their owner.
+
+> **This is a development affordance, not a security model.** There is no
+> signup flow, so every account comes from the seed and every account shares one
+> published password — anyone who can reach the URL can log in as anyone. The
+> server enforces this structurally: it **refuses to start** when
+> `APP_ENV=production` while `SEED_DEMO=true`, while `JWT_SECRET` is still the
+> built-in default, or while `DEMO_PASSWORD` is still the default.
+
+See [docs/API.md](docs/API.md) for the authentication contract.
 
 ## Layout
 
@@ -101,15 +128,24 @@ make up             # docker compose up --build
 ## Tests
 
 ```bash
-make test           # Go unit tests (ordering, validation, date handling)
-make smoke          # end-to-end: every endpoint against a running API
+make test           # Go unit tests (ordering, validation, dates, JWT)
+make smoke          # every board/column/card endpoint, authenticated
+make auth-smoke     # login, token handling, and cross-user isolation
 make check          # fmt, vet, test, frontend build, frontend lint
 cd frontend && npm run parity   # frontend ordering logic vs. the live API
 ```
 
-`make smoke` needs the API already running. It is safe to re-run: it cleans up
-any board left behind by an interrupted run, and it asserts that column and
-card positions stay a gap-free `0..n-1` run after every move.
+`make smoke` and `make auth-smoke` need the stack running (`make up`). Both sign
+in first and are safe to re-run: they clean up anything a previous interrupted
+run left behind and assert that column and card positions stay a gap-free
+`0..n-1` run after every move.
+
+Point either at a different backend with `$env:KANBAN_API`:
+
+```powershell
+$env:KANBAN_API = 'http://localhost:8080/api/v1'
+./backend/test/auth-smoke.ps1
+```
 
 `npm run parity` is the one that matters most for drag-and-drop. It feeds the
 real `board-state.ts` helpers into a live API and checks that the index the UI
@@ -133,9 +169,26 @@ destination inside one transaction, so a stale client can never corrupt the
 order and there is no fractional-position drift to clean up. Out-of-range
 positions are clamped, not rejected.
 
+**Access control.** Every board-scoped query filters on the authenticated user's
+id, so there is no code path that reads a board without also constraining it to
+its owner. Requesting someone else's board returns **404, not 403** — a 403
+would confirm the board exists.
+
+**`assignee` is free text, on purpose.** Boards are owner-only, so the only
+person who can open a card is its owner. A user reference would name someone
+who by construction cannot see the card. It names a person involved in the work
+instead (a deal contact, a colleague with no account). See the comment in
+`backend/sql/schema.sql` before "fixing" this.
+
 **Dates.** `cards.due_date` is a calendar date and is served as `YYYY-MM-DD`.
 It is never round-tripped through a timestamp, so it cannot shift by a day for
 anyone west of UTC. The frontend formats it locally for display only.
+
+**Sessions.** Stateless JWT in an `Authorization` header, held in
+`localStorage`. Logout therefore cannot revoke a token — it stays valid until it
+expires, which is why `JWT_TTL` defaults to 24h rather than "forever". Because
+the credential is a header rather than a cookie, cross-site requests cannot
+borrow it, so CSRF does not apply.
 
 **The `date` type.** sqlc 1.31 does not honour a `date` override against the
 pgx/v5 built-in mapping, so `due_date` stays `pgtype.Date` in the store. That
@@ -148,9 +201,13 @@ fails. See the frontend README for the details.
 
 ## API
 
-Full reference in [`docs/API.md`](docs/API.md). In short:
+Full reference in [`docs/API.md`](docs/API.md). In short — everything except
+`/health` and `/auth/login` requires `Authorization: Bearer <token>`:
 
 ```
+POST   /api/v1/auth/login
+GET    /api/v1/auth/me
+
 GET    /api/v1/boards
 POST   /api/v1/boards
 GET    /api/v1/boards/{id}
@@ -174,15 +231,26 @@ GET    /api/v1/health
 
 | Variable               | Default                                          |
 | ---------------------- | ------------------------------------------------ |
-| `DATABASE_URL`         | `postgres://todo:todo@localhost:5432/kanban?sslmode=disable` |
+| `DATABASE_URL`         | `postgres://kanban:kanban@postgres:5432/kanban?sslmode=disable` |
 | `BACKEND_PORT`         | `8080`                                           |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000`                          |
-| `SEED_DEMO`            | `true` — seeds only when the database is empty   |
+| `SEED_DEMO`            | `true` — seeds accounts only when the database has no users |
 | `APP_ENV`              | `development`                                    |
+| `JWT_SECRET`           | a built-in development default; **required** and ≥32 chars in production |
+| `JWT_TTL`              | `24h`                                            |
+| `DEMO_PASSWORD`        | `kanban-demo`                                    |
 
 In development every `localhost` / `127.0.0.1` port is additionally allowed
 through CORS, so the Next dev server can change ports freely. Set `APP_ENV` to
 anything else and only the configured origins are accepted.
+
+> **Postgres credentials.** `POSTGRES_USER` / `POSTGRES_PASSWORD` in
+> docker-compose.yml are only read when Postgres first initialises an **empty**
+> data directory. Changing them later has no effect on an existing `pgdata`
+> volume — the container will start, report healthy, and reject the new
+> credentials with no hint that the setting was ignored. Switching the current
+> `kanban` user to anything else requires `docker compose down -v`, which
+> destroys the database.
 
 ## Regenerating the store
 

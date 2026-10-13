@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"kanban/internal/auth"
 )
 
 // ValidationError is raised for bad client input and rendered as HTTP 400.
@@ -26,6 +28,15 @@ func (e NotFoundError) Error() string { return e.Message }
 type ConflictError struct{ Message string }
 
 func (e ConflictError) Error() string { return e.Message }
+
+// unauthorized is rendered as HTTP 401 with the standard envelope.
+func unauthorized(message string) error {
+	return unauthorizedError{Message: message}
+}
+
+type unauthorizedError struct{ Message string }
+
+func (e unauthorizedError) Error() string { return e.Message }
 
 func invalid(format string, args ...any) error {
 	return ValidationError{Message: sprintf(format, args...)}
@@ -58,9 +69,24 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		vErr ValidationError
 		nErr NotFoundError
 		cErr ConflictError
+		uErr unauthorizedError
 	)
 
+	// WWW-Authenticate tells a client this was an auth failure rather than a
+	// missing route or a bad request.
+	w.Header().Set("WWW-Authenticate", `Bearer realm="kanban"`)
+
 	switch {
+	case errors.As(err, &uErr):
+		writeJSON(w, http.StatusUnauthorized, ErrorResponse{ErrUnauthorized, uErr.Message})
+	case errors.Is(err, auth.ErrInvalidCredentials):
+		// Deliberately vague: confirming which half was wrong would let a
+		// caller enumerate usernames.
+		writeJSON(w, http.StatusUnauthorized,
+			ErrorResponse{ErrUnauthorized, "invalid username or password"})
+	case errors.Is(err, auth.ErrInvalidToken):
+		writeJSON(w, http.StatusUnauthorized,
+			ErrorResponse{ErrUnauthorized, "session expired or invalid, please sign in again"})
 	case errors.As(err, &vErr):
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{ErrValidation, vErr.Message})
 	case errors.As(err, &nErr):

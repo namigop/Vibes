@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"kanban/internal/api"
+	"kanban/internal/auth"
 	"kanban/internal/config"
 	"kanban/internal/store"
 	"kanban/migrations"
@@ -36,11 +37,25 @@ func run() error {
 	cfg := config.Load()
 	setupLogging(cfg)
 
+	// Refuse to boot a configuration that is only safe on a laptop. Seeded
+	// demo personas share one published password and there is no signup flow,
+	// so exposing that to a network is a full account compromise.
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if cfg.UsesDefaultJWTSecret() {
+		slog.Warn("using the built-in development JWT secret; " +
+			"anyone can mint tokens for any user. Set JWT_SECRET before exposing this.")
+	}
+
+	signer := auth.NewSigner(cfg.JWTSecret, cfg.JWTTTL)
+
 	slog.Info("starting kanban api",
 		"addr", cfg.Addr(),
 		"env", cfg.Env,
 		"database", cfg.Redacted(),
 		"seed_demo", cfg.SeedDemo,
+		"token_ttl", cfg.JWTTTL,
 	)
 
 	// bootCtx is cancelled by Ctrl-C; everything before the server starts
@@ -61,13 +76,24 @@ func run() error {
 	slog.Info("migrations up to date")
 
 	if cfg.SeedDemo {
-		if err := store.SeedDemoData(bootCtx, pool); err != nil {
+		// Include the legacy account so its password tracks DEMO_PASSWORD too;
+		// it owns boards that predate ownership and gets no demo content.
+		personas := append(append([]string{}, config.DemoPersonas...), config.LegacyUsername)
+
+		seeded, err := store.SeedDemoData(bootCtx, pool, personas, cfg.DemoPassword)
+		if err != nil {
 			return err
 		}
-		slog.Info("demo data ensured")
+		if len(seeded.CreatedPersonas) == 0 {
+			slog.Info("demo accounts already present, nothing seeded")
+		} else {
+			slog.Info("seeded demo accounts",
+				"personas", seeded.CreatedPersonas,
+				"boards", seeded.CreatedBoards)
+		}
 	}
 
-	svc := api.NewService(pool)
+	svc := api.NewService(pool, signer)
 	srv := &http.Server{
 		Addr:              cfg.Addr(),
 		Handler:           api.NewRouter(svc, cfg),

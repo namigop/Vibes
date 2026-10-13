@@ -2,7 +2,19 @@
 # Exits non-zero on the first failed assertion.
 
 $ErrorActionPreference = 'Stop'
-$base = 'http://localhost:8081/api/v1'
+
+# Override to point at a different backend, e.g. the compose stack:
+#   $env:KANBAN_API = 'http://localhost:8080/api/v1'; ./test/smoke.ps1
+$base = if ($env:KANBAN_API) { $env:KANBAN_API } else { 'http://localhost:8081/api/v1' }
+
+# Every board endpoint requires a bearer token, so this suite signs in first
+# and then runs as an ordinary user. (test/auth-smoke.ps1 covers the auth and
+# cross-user isolation behaviour itself.)
+$smokeUser = if ($env:SANBAN_USER) { $env:SANBAN_USER } else { 'demo' }
+$demoPassword = if ($env:DEMO_PASSWORD) { $env:DEMO_PASSWORD } else { 'kanban-demo' }
+
+Write-Output "targeting $base"
+Write-Output "acting as $smokeUser"
 $failures = @()
 $checks = 0
 
@@ -16,11 +28,17 @@ function Check($name, $cond, $detail = '') {
     }
 }
 
+# Set below once we have a token; every request below carries it.
+$script:token = $null
+
 function Api($method, $path, $body = $null) {
     $params = @{ Method = $method; Uri = "$base$path"; TimeoutSec = 20 }
     if ($body -ne $null) {
         $params['Body'] = ($body | ConvertTo-Json -Depth 6)
         $params['ContentType'] = 'application/json'
+    }
+    if ($script:token) {
+        $params['Headers'] = @{ Authorization = "Bearer $script:token" }
     }
     try {
         $r = Invoke-WebRequest @params -UseBasicParsing
@@ -47,7 +65,16 @@ function CheckGapFree($items, $label) {
     Check "$label positions are gap-free 0..n-1" $ok "got: $($positions -join ',')"
 }
 
-Write-Output "`n=== 0. Cleanup from previous runs ==="
+Write-Output "`n=== 0. Sign in and clean up from previous runs ==="
+$login = Api POST '/auth/login' @{ username = $smokeUser; password = $demoPassword }
+if ($login.Status -ne 200) {
+    Write-Output "  FAIL  could not sign in as $smokeUser (HTTP $($login.Status)): $($login.Raw)"
+    Write-Output '        set $env:DEMO_PASSWORD or $env:SANBAN_USER if the seed differs.'
+    exit 1
+}
+$script:token = $login.Body.token
+Write-Output "  signed in as $($login.Body.user.username)"
+
 # An interrupted earlier run can leave a smoke board behind, which would make
 # the final board count assertion fail for reasons unrelated to the API.
 $stale = Api GET '/boards'
@@ -188,7 +215,13 @@ Check 'deleted board now 404' ($after4.Status -eq 404) "got $($after4.Status)"
 
 $boardsNow = Api GET '/boards'
 Check 'board count back to baseline after cleanup' ($boardsNow.Body.Count -eq $baseline) "got $($boardsNow.Body.Count), expected $baseline"
-Check 'seeded boards still present' (@($boardsNow.Body.name) -contains 'Product Roadmap' -and @($boardsNow.Body.name) -contains 'Sales Pipeline') "got $((@($boardsNow.Body.name)) -join ',')"
+
+# Each persona is seeded with their own boards, so this is relative to whoever
+# signed in rather than the names one particular persona happens to have.
+$names = @($boardsNow.Body.name)
+Check "the signed-in user still has boards" ($names.Count -eq $baseline -and $baseline -gt 0) "got $($names -join ',')"
+Check 'no smoke board left behind' (-not (@($names | Where-Object { $_ -like 'Smoke*' }).Count)) "got $($names -join ',')"
+Check 'the new board was owned by the caller' ($created.Body.owner_id -eq $login.Body.user.id)
 
 Write-Output "`n=== 11. CORS preflight ==="
 try {

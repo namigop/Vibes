@@ -67,6 +67,10 @@ api: ## Run the API in the foreground
 smoke: ## Exercise every endpoint against a running API
 	./$(BACKEND)/test/smoke.ps1
 
+.PHONY: auth-smoke
+auth-smoke: ## Exercise login + per-user isolation against a running API
+	./$(BACKEND)/test/auth-smoke.ps1
+
 # --- frontend ---------------------------------------------------------------
 
 .PHONY: web

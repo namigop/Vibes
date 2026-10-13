@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"kanban/internal/auth"
 )
 
 // maxBodyBytes caps request bodies. A card is tiny; anything larger is a bug
@@ -46,6 +48,25 @@ func pathUUID(r *http.Request, name, what string) (uuid.UUID, error) {
 	return parseUUID(r.PathValue(name), what)
 }
 
+// callerUserID reads the authenticated user's id from the request context.
+//
+// Every handler behind RequireAuth calls this. It panics on a missing id,
+// which is a routing bug rather than a client error: reaching a protected
+// handler without the middleware mounted should fail loudly in development,
+// not silently act on a nil owner.
+func callerUserID(r *http.Request) uuid.UUID {
+	raw, ok := auth.UserIDFrom(r.Context())
+	if !ok {
+		panic("api: handler mounted without auth.RequireAuth middleware")
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		// Unreachable: RequireAuth only stores a parsed UUID.
+		panic("api: auth context carried an unparsable user id: " + err.Error())
+	}
+	return id
+}
+
 // ---- health ---------------------------------------------------------------
 
 func (s *Service) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -59,13 +80,47 @@ func (s *Service) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, HealthResponse{Status: "ok", DB: "ok"})
 }
 
+// ---- auth -----------------------------------------------------------------
+
+// handleLogin is deliberately NOT behind RequireAuth — it is how a caller gets
+// a token in the first place.
+func (s *Service) handleLogin(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := requestContext(r)
+	defer cancel()
+
+	var req LoginRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	res, err := s.Authenticate(ctx, req.Username, req.Password)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Service) handleCurrentUser(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := requestContext(r)
+	defer cancel()
+
+	user, err := s.CurrentUser(ctx)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
 // ---- boards ---------------------------------------------------------------
 
 func (s *Service) handleListBoards(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := requestContext(r)
 	defer cancel()
 
-	boards, err := s.ListBoards(ctx)
+	boards, err := s.ListBoards(ctx, callerUserID(r))
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -83,7 +138,7 @@ func (s *Service) handleCreateBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	board, err := s.CreateBoard(ctx, req.Name)
+	board, err := s.CreateBoard(ctx, callerUserID(r), req.Name)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -101,7 +156,7 @@ func (s *Service) handleGetBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	detail, err := s.GetBoardDetail(ctx, id)
+	detail, err := s.GetBoardDetail(ctx, id, callerUserID(r))
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -125,7 +180,7 @@ func (s *Service) handleRenameBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	board, err := s.RenameBoard(ctx, id, req.Name)
+	board, err := s.RenameBoard(ctx, id, callerUserID(r), req.Name)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -143,7 +198,7 @@ func (s *Service) handleDeleteBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.DeleteBoard(ctx, id); err != nil {
+	if err := s.DeleteBoard(ctx, id, callerUserID(r)); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -168,7 +223,7 @@ func (s *Service) handleCreateColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	col, err := s.CreateColumn(ctx, boardID, req.Name)
+	col, err := s.CreateColumn(ctx, boardID, callerUserID(r), req.Name)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -192,7 +247,7 @@ func (s *Service) handleRenameColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	col, err := s.RenameColumn(ctx, id, req.Name)
+	col, err := s.RenameColumn(ctx, id, callerUserID(r), req.Name)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -216,7 +271,7 @@ func (s *Service) handleMoveColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	columns, err := s.MoveColumn(ctx, id, req.Position)
+	columns, err := s.MoveColumn(ctx, id, callerUserID(r), req.Position)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -234,7 +289,7 @@ func (s *Service) handleDeleteColumn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.DeleteColumn(ctx, id); err != nil {
+	if err := s.DeleteColumn(ctx, id, callerUserID(r)); err != nil {
 		writeError(w, r, err)
 		return
 	}
@@ -259,7 +314,7 @@ func (s *Service) handleCreateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card, err := s.CreateCard(ctx, columnID, req)
+	card, err := s.CreateCard(ctx, columnID, callerUserID(r), req)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -283,7 +338,7 @@ func (s *Service) handleUpdateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card, err := s.UpdateCard(ctx, id, req)
+	card, err := s.UpdateCard(ctx, id, callerUserID(r), req)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -313,7 +368,7 @@ func (s *Service) handleMoveCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	card, err := s.MoveCard(ctx, id, columnID, req.Position)
+	card, err := s.MoveCard(ctx, id, columnID, callerUserID(r), req.Position)
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -331,7 +386,7 @@ func (s *Service) handleDeleteCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.DeleteCard(ctx, id); err != nil {
+	if err := s.DeleteCard(ctx, id, callerUserID(r)); err != nil {
 		writeError(w, r, err)
 		return
 	}

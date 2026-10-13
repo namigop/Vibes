@@ -1,7 +1,16 @@
 /**
- * There is no user table in the contract — `assignee` is free text. To keep a
- * person visually recognisable across the board we derive a stable colour from
- * their name with FNV-1a, so "Ada Lovelace" is always the same hue.
+ * `assignee` is free text and deliberately NOT a user reference, even though
+ * the app now has a users table.
+ *
+ * Boards are owner-only, so the only person who can open a given card is its
+ * owner. An FK here would name someone who by construction cannot see the
+ * card. Assignee instead names a person involved in the work being tracked —
+ * a deal contact, a colleague with no account.
+ *
+ * Do not "fix" this into a foreign key without also introducing board sharing.
+ *
+ * To keep a name visually recognisable across the board we derive a stable
+ * colour from it with FNV-1a, so "Ada Lovelace" is always the same hue.
  */
 export function hashName(name: string): number {
   let hash = 0x811c9dc5; // FNV-1a 32-bit offset basis

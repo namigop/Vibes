@@ -5,9 +5,12 @@ import { hueForName } from "@/lib/avatar";
 import { cn, initialsOf } from "@/lib/utils";
 
 /**
- * Assignees are free text (there is no user table), so the avatar is derived
- * from the name: initials plus a stable hue, meaning the same person always
- * gets the same colour on every board.
+ * The avatar is derived from the free-text assignee name: initials plus a
+ * stable hue, so the same person always gets the same colour on every board.
+ *
+ * An assignee is NOT an app account — it is a person involved in the work (see
+ * src/lib/avatar.ts). This component is also reused for the signed-in user in
+ * the side nav, which is why it takes a plain string.
  */
 export function AssigneeAvatar({
   name,

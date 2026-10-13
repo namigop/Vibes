@@ -13,30 +13,61 @@ import (
 )
 
 const boardExists = `-- name: BoardExists :one
-SELECT EXISTS (SELECT 1 FROM boards WHERE id = $1::uuid) AS exists
+SELECT EXISTS (
+    SELECT 1
+    FROM boards
+    WHERE id = $1::uuid
+      AND owner_id = $2::uuid
+) AS exists
 `
 
-func (q *Queries) BoardExists(ctx context.Context, id uuid.UUID) (bool, error) {
-	row := q.db.QueryRow(ctx, boardExists, id)
+type BoardExistsParams struct {
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) BoardExists(ctx context.Context, arg BoardExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, boardExists, arg.ID, arg.OwnerID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
 }
 
-const createBoard = `-- name: CreateBoard :one
-INSERT INTO boards (name, position)
-SELECT $1::text, COALESCE(MAX(position), -1) + 1
-FROM boards
-RETURNING id, name, position, created_at, updated_at
+const countUsers = `-- name: CountUsers :one
+SELECT count(*)::int AS count
+FROM users
 `
 
-func (q *Queries) CreateBoard(ctx context.Context, name string) (Board, error) {
-	row := q.db.QueryRow(ctx, createBoard, name)
+func (q *Queries) CountUsers(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, countUsers)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createBoard = `-- name: CreateBoard :one
+INSERT INTO boards (name, position, owner_id)
+SELECT $1::text,
+       COALESCE(MAX(position), -1) + 1,
+       $2::uuid
+FROM boards
+WHERE owner_id = $2::uuid
+RETURNING id, name, position, owner_id, created_at, updated_at
+`
+
+type CreateBoardParams struct {
+	Name    string    `json:"name"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) CreateBoard(ctx context.Context, arg CreateBoardParams) (Board, error) {
+	row := q.db.QueryRow(ctx, createBoard, arg.Name, arg.OwnerID)
 	var i Board
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Position,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -120,13 +151,43 @@ func (q *Queries) CreateColumn(ctx context.Context, arg CreateColumnParams) (Boa
 	return i, err
 }
 
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (username, password_hash)
+VALUES ($1::text, $2::text)
+RETURNING id, username, password_hash, created_at, updated_at
+`
+
+type CreateUserParams struct {
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUser, arg.Username, arg.PasswordHash)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteBoard = `-- name: DeleteBoard :execrows
 DELETE FROM boards
 WHERE id = $1::uuid
+  AND owner_id = $2::uuid
 `
 
-func (q *Queries) DeleteBoard(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteBoard, id)
+type DeleteBoardParams struct {
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) DeleteBoard(ctx context.Context, arg DeleteBoardParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBoard, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -134,12 +195,21 @@ func (q *Queries) DeleteBoard(ctx context.Context, id uuid.UUID) (int64, error) 
 }
 
 const deleteCard = `-- name: DeleteCard :execrows
-DELETE FROM cards
-WHERE id = $1::uuid
+DELETE FROM cards c
+    USING board_columns col, boards b
+WHERE c.id = $1::uuid
+  AND col.id = c.column_id
+  AND b.id = col.board_id
+  AND b.owner_id = $2::uuid
 `
 
-func (q *Queries) DeleteCard(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteCard, id)
+type DeleteCardParams struct {
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) DeleteCard(ctx context.Context, arg DeleteCardParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteCard, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -147,12 +217,20 @@ func (q *Queries) DeleteCard(ctx context.Context, id uuid.UUID) (int64, error) {
 }
 
 const deleteColumn = `-- name: DeleteColumn :execrows
-DELETE FROM board_columns
-WHERE id = $1::uuid
+DELETE FROM board_columns col
+    USING boards b
+WHERE col.id = $1::uuid
+  AND b.id = col.board_id
+  AND b.owner_id = $2::uuid
 `
 
-func (q *Queries) DeleteColumn(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteColumn, id)
+type DeleteColumnParams struct {
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) DeleteColumn(ctx context.Context, arg DeleteColumnParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteColumn, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -160,18 +238,25 @@ func (q *Queries) DeleteColumn(ctx context.Context, id uuid.UUID) (int64, error)
 }
 
 const getBoard = `-- name: GetBoard :one
-SELECT id, name, position, created_at, updated_at
+SELECT id, name, position, owner_id, created_at, updated_at
 FROM boards
 WHERE id = $1::uuid
+  AND owner_id = $2::uuid
 `
 
-func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
-	row := q.db.QueryRow(ctx, getBoard, id)
+type GetBoardParams struct {
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) GetBoard(ctx context.Context, arg GetBoardParams) (Board, error) {
+	row := q.db.QueryRow(ctx, getBoard, arg.ID, arg.OwnerID)
 	var i Board
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Position,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -179,13 +264,21 @@ func (q *Queries) GetBoard(ctx context.Context, id uuid.UUID) (Board, error) {
 }
 
 const getCard = `-- name: GetCard :one
-SELECT id, column_id, title, description, assignee, priority, due_date, position, created_at, updated_at
-FROM cards
-WHERE id = $1::uuid
+SELECT c.id, c.column_id, c.title, c.description, c.assignee, c.priority, c.due_date, c.position, c.created_at, c.updated_at
+FROM cards c
+         JOIN board_columns col ON col.id = c.column_id
+         JOIN boards b ON b.id = col.board_id
+WHERE c.id = $1::uuid
+  AND b.owner_id = $2::uuid
 `
 
-func (q *Queries) GetCard(ctx context.Context, id uuid.UUID) (Card, error) {
-	row := q.db.QueryRow(ctx, getCard, id)
+type GetCardParams struct {
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) GetCard(ctx context.Context, arg GetCardParams) (Card, error) {
+	row := q.db.QueryRow(ctx, getCard, arg.ID, arg.OwnerID)
 	var i Card
 	err := row.Scan(
 		&i.ID,
@@ -203,13 +296,20 @@ func (q *Queries) GetCard(ctx context.Context, id uuid.UUID) (Card, error) {
 }
 
 const getColumn = `-- name: GetColumn :one
-SELECT id, board_id, name, position, created_at, updated_at
-FROM board_columns
-WHERE id = $1::uuid
+SELECT col.id, col.board_id, col.name, col.position, col.created_at, col.updated_at
+FROM board_columns col
+         JOIN boards b ON b.id = col.board_id
+WHERE col.id = $1::uuid
+  AND b.owner_id = $2::uuid
 `
 
-func (q *Queries) GetColumn(ctx context.Context, id uuid.UUID) (BoardColumn, error) {
-	row := q.db.QueryRow(ctx, getColumn, id)
+type GetColumnParams struct {
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) GetColumn(ctx context.Context, arg GetColumnParams) (BoardColumn, error) {
+	row := q.db.QueryRow(ctx, getColumn, arg.ID, arg.OwnerID)
 	var i BoardColumn
 	err := row.Scan(
 		&i.ID,
@@ -222,14 +322,73 @@ func (q *Queries) GetColumn(ctx context.Context, id uuid.UUID) (BoardColumn, err
 	return i, err
 }
 
+const getUserByID = `-- name: GetUserByID :one
+
+
+SELECT id, username, password_hash, created_at, updated_at
+FROM users
+WHERE id = $1::uuid
+`
+
+// Queries for the kanban app.
+//
+// OWNERSHIP RULE: every query that can reach a board, column or card is scoped
+// to the authenticated user. A board is visible only to its owner, so
+// columns and cards are scoped by joining up to boards.owner_id rather than
+// trusting an id from the client.
+//
+// A miss here is what makes another user's board return 404 rather than 403:
+// the row simply is not visible, so pgx reports ErrNoRows and the API maps it
+// to not_found. That is deliberate — a 403 would confirm the board exists.
+// ---------------------------------------------------------------------------
+// users / auth
+// ---------------------------------------------------------------------------
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECT id, username, password_hash, created_at, updated_at
+FROM users
+WHERE lower(username) = lower($1::text)
+`
+
+// Case-insensitive: login is case-insensitive even though display is not.
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByUsername, username)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listBoards = `-- name: ListBoards :many
-SELECT id, name, position, created_at, updated_at
+
+SELECT id, name, position, owner_id, created_at, updated_at
 FROM boards
+WHERE owner_id = $1::uuid
 ORDER BY position ASC, created_at ASC
 `
 
-func (q *Queries) ListBoards(ctx context.Context) ([]Board, error) {
-	rows, err := q.db.Query(ctx, listBoards)
+// ---------------------------------------------------------------------------
+// boards
+// ---------------------------------------------------------------------------
+func (q *Queries) ListBoards(ctx context.Context, ownerID uuid.UUID) ([]Board, error) {
+	rows, err := q.db.Query(ctx, listBoards, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -241,6 +400,7 @@ func (q *Queries) ListBoards(ctx context.Context) ([]Board, error) {
 			&i.ID,
 			&i.Name,
 			&i.Position,
+			&i.OwnerID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -255,14 +415,22 @@ func (q *Queries) ListBoards(ctx context.Context) ([]Board, error) {
 }
 
 const listCardIDsInColumn = `-- name: ListCardIDsInColumn :many
-SELECT id
-FROM cards
-WHERE column_id = $1::uuid
-ORDER BY position ASC, created_at ASC
+SELECT c.id
+FROM cards c
+         JOIN board_columns col ON col.id = c.column_id
+         JOIN boards b ON b.id = col.board_id
+WHERE c.column_id = $1::uuid
+  AND b.owner_id = $2::uuid
+ORDER BY c.position ASC, c.created_at ASC
 `
 
-func (q *Queries) ListCardIDsInColumn(ctx context.Context, columnID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, listCardIDsInColumn, columnID)
+type ListCardIDsInColumnParams struct {
+	ColumnID uuid.UUID `json:"column_id"`
+	OwnerID  uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) ListCardIDsInColumn(ctx context.Context, arg ListCardIDsInColumnParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listCardIDsInColumn, arg.ColumnID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -282,15 +450,26 @@ func (q *Queries) ListCardIDsInColumn(ctx context.Context, columnID uuid.UUID) (
 }
 
 const listCardsForBoard = `-- name: ListCardsForBoard :many
+
 SELECT c.id, c.column_id, c.title, c.description, c.assignee, c.priority, c.due_date, c.position, c.created_at, c.updated_at
 FROM cards c
          JOIN board_columns col ON col.id = c.column_id
-WHERE col.board_id = $1::uuid
+         JOIN boards b ON b.id = col.board_id
+WHERE b.id = $1::uuid
+  AND b.owner_id = $2::uuid
 ORDER BY col.position ASC, c.position ASC, c.created_at ASC
 `
 
-func (q *Queries) ListCardsForBoard(ctx context.Context, boardID uuid.UUID) ([]Card, error) {
-	rows, err := q.db.Query(ctx, listCardsForBoard, boardID)
+type ListCardsForBoardParams struct {
+	BoardID uuid.UUID `json:"board_id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+// ---------------------------------------------------------------------------
+// cards
+// ---------------------------------------------------------------------------
+func (q *Queries) ListCardsForBoard(ctx context.Context, arg ListCardsForBoardParams) ([]Card, error) {
+	rows, err := q.db.Query(ctx, listCardsForBoard, arg.BoardID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -321,14 +500,21 @@ func (q *Queries) ListCardsForBoard(ctx context.Context, boardID uuid.UUID) ([]C
 }
 
 const listColumnIDs = `-- name: ListColumnIDs :many
-SELECT id
-FROM board_columns
-WHERE board_id = $1::uuid
-ORDER BY position ASC, created_at ASC
+SELECT col.id
+FROM board_columns col
+         JOIN boards b ON b.id = col.board_id
+WHERE col.board_id = $1::uuid
+  AND b.owner_id = $2::uuid
+ORDER BY col.position ASC, col.created_at ASC
 `
 
-func (q *Queries) ListColumnIDs(ctx context.Context, boardID uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, listColumnIDs, boardID)
+type ListColumnIDsParams struct {
+	BoardID uuid.UUID `json:"board_id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+func (q *Queries) ListColumnIDs(ctx context.Context, arg ListColumnIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listColumnIDs, arg.BoardID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -348,14 +534,25 @@ func (q *Queries) ListColumnIDs(ctx context.Context, boardID uuid.UUID) ([]uuid.
 }
 
 const listColumns = `-- name: ListColumns :many
-SELECT id, board_id, name, position, created_at, updated_at
-FROM board_columns
-WHERE board_id = $1::uuid
-ORDER BY position ASC, created_at ASC
+
+SELECT col.id, col.board_id, col.name, col.position, col.created_at, col.updated_at
+FROM board_columns col
+         JOIN boards b ON b.id = col.board_id
+WHERE col.board_id = $1::uuid
+  AND b.owner_id = $2::uuid
+ORDER BY col.position ASC, col.created_at ASC
 `
 
-func (q *Queries) ListColumns(ctx context.Context, boardID uuid.UUID) ([]BoardColumn, error) {
-	rows, err := q.db.Query(ctx, listColumns, boardID)
+type ListColumnsParams struct {
+	BoardID uuid.UUID `json:"board_id"`
+	OwnerID uuid.UUID `json:"owner_id"`
+}
+
+// ---------------------------------------------------------------------------
+// columns
+// ---------------------------------------------------------------------------
+func (q *Queries) ListColumns(ctx context.Context, arg ListColumnsParams) ([]BoardColumn, error) {
+	rows, err := q.db.Query(ctx, listColumns, arg.BoardID, arg.OwnerID)
 	if err != nil {
 		return nil, err
 	}
@@ -382,53 +579,67 @@ func (q *Queries) ListColumns(ctx context.Context, boardID uuid.UUID) ([]BoardCo
 }
 
 const setCardColumn = `-- name: SetCardColumn :exec
-UPDATE cards
+UPDATE cards c
 SET column_id  = $1::uuid,
     updated_at = now()
-WHERE id = $2::uuid
+FROM board_columns col, boards b
+WHERE c.id = $2::uuid
+  AND col.id = c.column_id
+  AND b.id = col.board_id
+  AND b.owner_id = $3::uuid
 `
 
 type SetCardColumnParams struct {
 	ColumnID uuid.UUID `json:"column_id"`
 	ID       uuid.UUID `json:"id"`
+	OwnerID  uuid.UUID `json:"owner_id"`
 }
 
 func (q *Queries) SetCardColumn(ctx context.Context, arg SetCardColumnParams) error {
-	_, err := q.db.Exec(ctx, setCardColumn, arg.ColumnID, arg.ID)
+	_, err := q.db.Exec(ctx, setCardColumn, arg.ColumnID, arg.ID, arg.OwnerID)
 	return err
 }
 
 const setCardPosition = `-- name: SetCardPosition :exec
-UPDATE cards
+UPDATE cards c
 SET position   = $1::int,
     updated_at = now()
-WHERE id = $2::uuid
+FROM board_columns col, boards b
+WHERE c.id = $2::uuid
+  AND col.id = c.column_id
+  AND b.id = col.board_id
+  AND b.owner_id = $3::uuid
 `
 
 type SetCardPositionParams struct {
 	Position int32     `json:"position"`
 	ID       uuid.UUID `json:"id"`
+	OwnerID  uuid.UUID `json:"owner_id"`
 }
 
 func (q *Queries) SetCardPosition(ctx context.Context, arg SetCardPositionParams) error {
-	_, err := q.db.Exec(ctx, setCardPosition, arg.Position, arg.ID)
+	_, err := q.db.Exec(ctx, setCardPosition, arg.Position, arg.ID, arg.OwnerID)
 	return err
 }
 
 const setColumnOrdinal = `-- name: SetColumnOrdinal :exec
-UPDATE board_columns
+UPDATE board_columns col
 SET position   = $1::int,
     updated_at = now()
-WHERE id = $2::uuid
+FROM boards b
+WHERE col.id = $2::uuid
+  AND b.id = col.board_id
+  AND b.owner_id = $3::uuid
 `
 
 type SetColumnOrdinalParams struct {
 	Position int32     `json:"position"`
 	ID       uuid.UUID `json:"id"`
+	OwnerID  uuid.UUID `json:"owner_id"`
 }
 
 func (q *Queries) SetColumnOrdinal(ctx context.Context, arg SetColumnOrdinalParams) error {
-	_, err := q.db.Exec(ctx, setColumnOrdinal, arg.Position, arg.ID)
+	_, err := q.db.Exec(ctx, setColumnOrdinal, arg.Position, arg.ID, arg.OwnerID)
 	return err
 }
 
@@ -437,21 +648,24 @@ UPDATE boards
 SET name       = $1::text,
     updated_at = now()
 WHERE id = $2::uuid
-RETURNING id, name, position, created_at, updated_at
+  AND owner_id = $3::uuid
+RETURNING id, name, position, owner_id, created_at, updated_at
 `
 
 type UpdateBoardNameParams struct {
-	Name string    `json:"name"`
-	ID   uuid.UUID `json:"id"`
+	Name    string    `json:"name"`
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
 }
 
 func (q *Queries) UpdateBoardName(ctx context.Context, arg UpdateBoardNameParams) (Board, error) {
-	row := q.db.QueryRow(ctx, updateBoardName, arg.Name, arg.ID)
+	row := q.db.QueryRow(ctx, updateBoardName, arg.Name, arg.ID, arg.OwnerID)
 	var i Board
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Position,
+		&i.OwnerID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -459,15 +673,19 @@ func (q *Queries) UpdateBoardName(ctx context.Context, arg UpdateBoardNameParams
 }
 
 const updateCard = `-- name: UpdateCard :one
-UPDATE cards
+UPDATE cards c
 SET title       = $1::text,
     description = COALESCE($2::text, ''),
     assignee    = COALESCE($3::text, ''),
     priority    = $4::text,
     due_date    = $5::date,
     updated_at  = now()
-WHERE id = $6::uuid
-RETURNING id, column_id, title, description, assignee, priority, due_date, position, created_at, updated_at
+FROM board_columns col, boards b
+WHERE c.id = $6::uuid
+  AND col.id = c.column_id
+  AND b.id = col.board_id
+  AND b.owner_id = $7::uuid
+RETURNING c.id, c.column_id, c.title, c.description, c.assignee, c.priority, c.due_date, c.position, c.created_at, c.updated_at
 `
 
 type UpdateCardParams struct {
@@ -477,6 +695,7 @@ type UpdateCardParams struct {
 	Priority    string      `json:"priority"`
 	DueDate     pgtype.Date `json:"due_date"`
 	ID          uuid.UUID   `json:"id"`
+	OwnerID     uuid.UUID   `json:"owner_id"`
 }
 
 func (q *Queries) UpdateCard(ctx context.Context, arg UpdateCardParams) (Card, error) {
@@ -487,6 +706,7 @@ func (q *Queries) UpdateCard(ctx context.Context, arg UpdateCardParams) (Card, e
 		arg.Priority,
 		arg.DueDate,
 		arg.ID,
+		arg.OwnerID,
 	)
 	var i Card
 	err := row.Scan(
@@ -505,26 +725,76 @@ func (q *Queries) UpdateCard(ctx context.Context, arg UpdateCardParams) (Card, e
 }
 
 const updateColumnName = `-- name: UpdateColumnName :one
-UPDATE board_columns
+UPDATE board_columns col
 SET name       = $1::text,
     updated_at = now()
-WHERE id = $2::uuid
-RETURNING id, board_id, name, position, created_at, updated_at
+FROM boards b
+WHERE col.id = $2::uuid
+  AND b.id = col.board_id
+  AND b.owner_id = $3::uuid
+RETURNING col.id, col.board_id, col.name, col.position, col.created_at, col.updated_at
 `
 
 type UpdateColumnNameParams struct {
-	Name string    `json:"name"`
-	ID   uuid.UUID `json:"id"`
+	Name    string    `json:"name"`
+	ID      uuid.UUID `json:"id"`
+	OwnerID uuid.UUID `json:"owner_id"`
 }
 
 func (q *Queries) UpdateColumnName(ctx context.Context, arg UpdateColumnNameParams) (BoardColumn, error) {
-	row := q.db.QueryRow(ctx, updateColumnName, arg.Name, arg.ID)
+	row := q.db.QueryRow(ctx, updateColumnName, arg.Name, arg.ID, arg.OwnerID)
 	var i BoardColumn
 	err := row.Scan(
 		&i.ID,
 		&i.BoardID,
 		&i.Name,
 		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :exec
+UPDATE users
+SET password_hash = $1::text,
+    updated_at    = now()
+WHERE id = $2::uuid
+`
+
+type UpdateUserPasswordParams struct {
+	PasswordHash string    `json:"password_hash"`
+	ID           uuid.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error {
+	_, err := q.db.Exec(ctx, updateUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}
+
+const upsertPersona = `-- name: UpsertPersona :one
+INSERT INTO users (username, password_hash)
+SELECT $1::text, $2::text
+WHERE NOT EXISTS (
+    SELECT 1 FROM users WHERE lower(username) = lower($1::text)
+)
+RETURNING id, username, password_hash, created_at, updated_at
+`
+
+type UpsertPersonaParams struct {
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+}
+
+// Used only by the seed. ON CONFLICT is not available on an expression index,
+// so it matches the existing row by lower(username) explicitly.
+func (q *Queries) UpsertPersona(ctx context.Context, arg UpsertPersonaParams) (User, error) {
+	row := q.db.QueryRow(ctx, upsertPersona, arg.Username, arg.PasswordHash)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.PasswordHash,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

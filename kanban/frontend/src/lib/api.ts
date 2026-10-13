@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/constants";
+import { clearSession, getToken } from "@/lib/token";
 import type {
   ApiErrorEnvelope,
   Board,
@@ -7,9 +8,11 @@ import type {
   Column,
   CreateCardRequest,
   HealthResponse,
+  LoginResponse,
   MoveCardRequest,
   MoveColumnRequest,
   Priority,
+  User,
 } from "@/lib/types";
 
 /**
@@ -31,15 +34,42 @@ export class ApiError extends Error {
   }
 }
 
+/** True when the failure means "you are not signed in". */
+export function isUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
+}
+
 const FALLBACK_MESSAGES: Record<number, string> = {
   400: "The request was rejected as invalid.",
+  401: "Your session has ended. Please sign in again.",
   404: "That item no longer exists — it may have been deleted.",
   409: "That name is already taken.",
   500: "The server hit an unexpected error.",
 };
 
+/**
+ * Suppresses the 401 produced by the very first `GET /auth/me` on a signed-out
+ * visit. Without it, the API would clear storage and the UI would race to show
+ * the sign-in view before the initial probe had even resolved.
+ */
+let suppressUnauthorized = false;
+
+/** Runs `fn` without treating a 401 as noteworthy. */
+export async function withoutAuthNoise<T>(fn: () => Promise<T>): Promise<T> {
+  suppressUnauthorized = true;
+  try {
+    return await fn();
+  } finally {
+    suppressUnauthorized = false;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
+
+  // Every request carries the bearer token when we hold one. This is the
+  // single place that attaches it.
+  const token = getToken();
 
   let response: Response;
   try {
@@ -48,6 +78,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: {
         Accept: "application/json",
         ...(init?.body ? { "Content-Type": "application/json" } : null),
+        ...(token ? { Authorization: `Bearer ${token}` } : null),
         ...init?.headers,
       },
       // Board data is user-owned and changes constantly: never serve it stale.
@@ -69,6 +100,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const envelope = isErrorEnvelope(body) ? body : null;
+
+    if (response.status === 401 && !suppressUnauthorized) {
+      // The stored token is no longer good — expired, signed with an old
+      // secret, or the database was reset. Drop it so the app falls back to
+      // the sign-in view instead of retrying with a dead credential forever.
+      clearSession();
+    }
+
     throw new ApiError(
       response.status,
       envelope?.error ?? "unknown_error",
@@ -146,6 +185,21 @@ export function normaliseBoardDetail(raw: BoardDetail): BoardDetail {
     columns: raw.columns ?? [],
     cards: (raw.cards ?? []).map(normaliseCard),
   };
+}
+
+/* ------------------------------ Auth ------------------------------ */
+
+/** POST /auth/login — the only endpoint that needs no existing token. */
+export function login(username: string, password: string): Promise<LoginResponse> {
+  return request<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: jsonBody({ username, password }),
+  });
+}
+
+/** GET /auth/me — validates the stored token and identifies the caller. */
+export function currentUser(): Promise<User> {
+  return request<User>("/auth/me");
 }
 
 /* ------------------------------ Boards ----------------------------- */

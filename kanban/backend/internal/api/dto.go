@@ -16,17 +16,26 @@ type ErrorResponse struct {
 
 // Stable machine-readable error slugs.
 const (
-	ErrValidation = "validation_failed"
-	ErrNotFound   = "not_found"
-	ErrConflict   = "conflict"
-	ErrInternal   = "internal_error"
+	ErrValidation   = "validation_failed"
+	ErrNotFound     = "not_found"
+	ErrConflict     = "conflict"
+	ErrInternal     = "internal_error"
+	ErrUnauthorized = "unauthorized"
 )
 
-// Board is a collection of columns.
+// User is the public view of an account. It never includes password_hash — the
+// DTO is what gets serialised, so the hash cannot leak by omission.
+type User struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+// Board is a collection of columns owned by exactly one user.
 type Board struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Position  int32     `json:"position"`
+	OwnerID   string    `json:"owner_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -43,6 +52,10 @@ type Column struct {
 
 // Card is one unit of work. DueDate is a calendar date rendered as
 // "2006-01-02" in UTC, or nil when the card has no due date.
+//
+// Assignee is free text naming a person involved in the work, NOT an account —
+// boards are owner-only, so a user reference here would name someone who
+// cannot open the card.
 type Card struct {
 	ID          string    `json:"id"`
 	ColumnID    string    `json:"column_id"`
@@ -70,6 +83,20 @@ type HealthResponse struct {
 }
 
 // ---- request bodies -------------------------------------------------------
+
+// LoginRequest is the body for POST /auth/login.
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// LoginResponse carries the bearer token and the signed-in user.
+type LoginResponse struct {
+	Token     string    `json:"token"`
+	TokenType string    `json:"token_type"`
+	ExpiresAt time.Time `json:"expires_at"`
+	User      User      `json:"user"`
+}
 
 // CreateBoardRequest is the body for POST /boards.
 type CreateBoardRequest struct {

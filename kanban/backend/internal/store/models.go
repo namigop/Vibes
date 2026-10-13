@@ -15,6 +15,7 @@ type Board struct {
 	ID        uuid.UUID `json:"id"`
 	Name      string    `json:"name"`
 	Position  int32     `json:"position"`
+	OwnerID   uuid.UUID `json:"owner_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -39,4 +40,12 @@ type Card struct {
 	Position    int32       `json:"position"`
 	CreatedAt   time.Time   `json:"created_at"`
 	UpdatedAt   time.Time   `json:"updated_at"`
+}
+
+type User struct {
+	ID           uuid.UUID `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"password_hash"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
